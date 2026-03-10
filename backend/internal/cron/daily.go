@@ -2,11 +2,14 @@ package cron
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"time"
 
 	"github.com/stayrelevant-id/cloudgazer/internal/aws"
 	"github.com/stayrelevant-id/cloudgazer/internal/database"
 	"github.com/stayrelevant-id/cloudgazer/internal/fetcher"
+	"github.com/stayrelevant-id/cloudgazer/internal/notifier"
 )
 
 func RunDailyFetch(ctx context.Context, db *database.DB, ssmClient *aws.SSMClient, awsRegion string) error {
@@ -32,8 +35,16 @@ func RunDailyFetch(ctx context.Context, db *database.DB, ssmClient *aws.SSMClien
 		log.Printf("Processing account: %s (%s)", accountName, provider)
 
 		var records []fetcher.CostRecord
+		var err error
 
-		if provider == "aws" {
+		if ssmPath == "TEST_MOCK_123" {
+			log.Printf("Using MOCK data for testing account %s", accountName)
+			importTime := time.Now().UTC().AddDate(0, 0, -1) // yesterday
+			records = []fetcher.CostRecord{
+				{Service: "Amazon EC2 (Mock)", AmountUSD: 120.50, Date: importTime},
+				{Service: "Amazon S3 (Mock)", AmountUSD: 30.25, Date: importTime},
+			}
+		} else if provider == "aws" {
 			// For AWS, ssmPath might store the Role ARN
 			roleARN := ""
 			if ssmPath != "" && ssmClient != nil {
@@ -73,6 +84,38 @@ func RunDailyFetch(ctx context.Context, db *database.DB, ssmClient *aws.SSMClien
 			)
 			if err != nil {
 				log.Printf("Failed to insert cost record for %s: %v", accountName, err)
+			}
+		}
+		// 4. Anomaly Check (Alerts)
+		var dayTotal float64
+		for _, rec := range records {
+			dayTotal += rec.AmountUSD
+		}
+
+		// check if config exists
+		var channel, webhookURL string
+		var threshold float64
+		err = db.Pool.QueryRow(ctx, `
+			SELECT channel, webhook_url, daily_threshold 
+			FROM alert_configs 
+			WHERE account_id = $1 AND is_active = true 
+			LIMIT 1`, id).Scan(&channel, &webhookURL, &threshold)
+
+		if err == nil && threshold > 0 && dayTotal > threshold {
+			log.Printf("ALERT! Account %s exceeded threshold (%.2f > %.2f)", accountName, dayTotal, threshold)
+
+			// Build Message
+			msg := fmt.Sprintf("🚨 *CloudGazer Limit Exceeded* 🚨\nAccount: *%s* (%s)\n- Today's Usage: *$%.2f*\n- Daily Limit: *$%.2f*", accountName, provider, dayTotal, threshold)
+
+			n, err := notifier.NewNotifier(channel, webhookURL)
+			if err != nil {
+				log.Printf("Failed to init notifier for %s: %v", accountName, err)
+			} else {
+				if err := n.SendAlert(msg); err != nil {
+					log.Printf("Failed to send alert for %s: %v", accountName, err)
+				} else {
+					log.Printf("Successfully sent %s alert for %s", channel, accountName)
+				}
 			}
 		}
 	}
