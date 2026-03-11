@@ -20,4 +20,5 @@ jobs:
           api_token: ${{ secrets.KOYEB_TOKEN }}
 
       - name: Deploy to Koyeb
-        run: koyeb service redeploy cloudgazer-backend
+        # Ganti 'cloudgazer/backend' dengan 'APP_NAME/SERVICE_NAME' sesuai Dashboard Koyeb Anda
+        run: koyeb service redeploy cloudgazer/backend
