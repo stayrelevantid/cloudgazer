@@ -33,6 +33,17 @@ import {
 } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
@@ -249,14 +260,35 @@ export default function BudgetsPage() {
                                             >
                                                 <Pencil size={16} />
                                             </Button>
-                                            <Button 
-                                                variant="ghost" 
-                                                size="icon" 
-                                                className="text-muted-foreground hover:text-destructive"
-                                                onClick={() => handleDeleteBudget(b.id)}
-                                            >
-                                                <Trash2 size={16} />
-                                            </Button>
+                                            
+                                            <AlertDialog>
+                                                <AlertDialogTrigger>
+                                                    <Button 
+                                                        variant="ghost" 
+                                                        size="icon" 
+                                                        className="text-muted-foreground hover:text-destructive"
+                                                    >
+                                                        <Trash2 size={16} />
+                                                    </Button>
+                                                </AlertDialogTrigger>
+                                                <AlertDialogContent className="bg-card border-border text-foreground">
+                                                    <AlertDialogHeader>
+                                                        <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                                                        <AlertDialogDescription className="text-muted-foreground">
+                                                            This will permanently delete the budget for <strong>{b.account_name}</strong>.
+                                                        </AlertDialogDescription>
+                                                    </AlertDialogHeader>
+                                                    <AlertDialogFooter>
+                                                        <AlertDialogCancel className="bg-muted text-foreground border-border">Cancel</AlertDialogCancel>
+                                                        <AlertDialogAction 
+                                                            onClick={() => handleDeleteBudget(b.id)}
+                                                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                                        >
+                                                            Delete Budget
+                                                        </AlertDialogAction>
+                                                    </AlertDialogFooter>
+                                                </AlertDialogContent>
+                                            </AlertDialog>
                                         </div>
                                     </div>
 
