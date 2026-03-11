@@ -35,7 +35,7 @@ Membangun platform **monitoring biaya cloud (AWS & GCP)** mandiri yang memungkin
 
 | Fitur | Deskripsi |
 |-------|-----------|
-| **Authentication** | Login aman menggunakan **Clerk** atau **Auth.js** (NextAuth). |
+| **Authentication** | Login aman menggunakan **Clerk**. Seluruh dashboard routes diproteksi oleh middleware (`auth.protect()`). |
 | **Dynamic Account Integration** | **AWS**: Input Role ARN (Cross-account access). **GCP**: Input Service Account JSON. |
 | **Secret Management** | Semua kredensial sensitif disimpan di **AWS SSM Parameter Store** (`SecureString`). |
 
@@ -113,7 +113,7 @@ CREATE TABLE alert_configs (
 | **Phase 2** | Fetcher Logic | Implementasi logic penarikan data AWS Cost Explorer & GCP Billing via Go. |
 | **Phase 3** | Frontend | Build Dashboard UI dengan shadcn/ui (Charts & Tables). |
 | **Phase 4** | Alerting | Implementasi Anomaly Detection dan Notification Engine. |
-| **Phase 5** | CI/CD | Setup GitHub Actions untuk Cron Job dan auto-deploy ke Koyeb/Vercel. |
+| **Phase 5** | CI/CD | [DONE] Setup GitHub Actions untuk Cron Job dan auto-deploy ke Koyeb/Vercel. |
 
 ---
 

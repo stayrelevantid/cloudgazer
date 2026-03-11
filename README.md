@@ -14,7 +14,7 @@
 ### 🛡️ Security & Management
 - **Dynamic Account Integration**: Add/remove AWS accounts (via Role ARN) and GCP accounts (via Service Account JSON) dynamically.
 - **Secret Management**: All sensitive credentials are stored securely in **AWS SSM Parameter Store** (`SecureString`).
-- **Authentication**: Secure login powered by **Clerk**.
+- **Authentication**: Secure login powered by **Clerk**. All dashboard routes (`/`, `/accounts`, etc.) are protected and require a signed-in session.
 
 ### ⚠️ Alerting & Janitor
 - **Threshold Alerts**: Receive Slack/Telegram notifications when daily spend exceeds your defined limit.
@@ -78,6 +78,10 @@ CloudGazer uses **GitHub Actions** for:
 
 > [!NOTE]
 > Ensure you have configured the required **GitHub Secrets** (`API_URL`, `KOYEB_TOKEN`, `VERCEL_TOKEN`, `CRON_SECRET`) in your repository settings.
+> The Koyeb deployment requires the full service identifier: `koyeb service redeploy cloudgazer/cloudgazer`.
+> 
+> [!IMPORTANT]
+> For Vercel deployments, ensure `frontend/vercel.json` does **not** contain the `rootDirectory` property, as this is managed via the Vercel dashboard.
 
 ---
 
