@@ -400,6 +400,15 @@ func main() {
 			whereClause = "record_date >= DATE_TRUNC('month', CURRENT_DATE)"
 		}
 
+		accountID := r.URL.Query().Get("account_id")
+		if accountID != "" {
+			whereClause += fmt.Sprintf(" AND account_id = '%s'", accountID)
+		}
+		provider := r.URL.Query().Get("provider")
+		if provider != "" {
+			whereClause += fmt.Sprintf(" AND ca.provider = '%s'", provider)
+		}
+
 		rows, err := db.Pool.Query(r.Context(), fmt.Sprintf(`
 			SELECT 
 				DATE_TRUNC('%s', record_date)::text as period,
@@ -466,6 +475,15 @@ func main() {
 			whereClause = "cr.record_date >= DATE_TRUNC('year', CURRENT_DATE) - INTERVAL '2 years' AND cr.record_date < DATE_TRUNC('year', CURRENT_DATE) - INTERVAL '1 year'"
 		default:
 			whereClause = "cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)"
+		}
+
+		accountID := r.URL.Query().Get("account_id")
+		if accountID != "" {
+			whereClause += fmt.Sprintf(" AND cr.account_id = '%s'", accountID)
+		}
+		provider := r.URL.Query().Get("provider")
+		if provider != "" {
+			whereClause += fmt.Sprintf(" AND ca.provider = '%s'", provider)
 		}
 
 		rows, err := db.Pool.Query(r.Context(), fmt.Sprintf(`
@@ -567,6 +585,16 @@ func main() {
 			interval = "1 day"
 		}
 
+		extraWhere := ""
+		accountID := r.URL.Query().Get("account_id")
+		if accountID != "" {
+			extraWhere += fmt.Sprintf(" AND account_id = '%s'", accountID)
+		}
+		provider := r.URL.Query().Get("provider")
+		if provider != "" {
+			extraWhere += fmt.Sprintf(" AND ca.provider = '%s'", provider)
+		}
+
 		rows, err := db.Pool.Query(r.Context(), fmt.Sprintf(`
 			WITH periods AS (
 				SELECT generate_series((%s)::timestamp, (%s)::timestamp, '%s'::interval) as period
@@ -576,9 +604,11 @@ func main() {
 				COALESCE(SUM(cr.amount_usd), 0) as total_usd
 			FROM periods p
 			LEFT JOIN cost_reports cr ON DATE_TRUNC('%s', cr.record_date) = p.period
+			LEFT JOIN cloud_accounts ca ON ca.id = cr.account_id
+			WHERE 1=1 %s
 			GROUP BY 1
 			ORDER BY 1 DESC
-		`, startDate, endDate, interval, granularity))
+		`, startDate, endDate, interval, granularity, extraWhere))
 
 		if err != nil {
 			log.Printf("Historical reports error: %v", err)

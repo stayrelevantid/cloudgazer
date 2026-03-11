@@ -1,4 +1,4 @@
-# ☁️ CloudGazer (v1.1)
+# ☁️ CloudGazer (v1.1.1)
 
 **CloudGazer** is a self-hosted multi-cloud cost monitoring platform designed to help you track daily spend across AWS and GCP while maintaining **Rp 0 operating costs** using free-tier infrastructure.
 
@@ -8,6 +8,8 @@
 
 ### 📊 Dashboard & Monitoring
 - **Multi-Cloud Overview**: Visualize combined AWS and GCP costs in a unified area chart.
+- **Granular Filtering**: Filter dashboard data by specific cloud accounts or providers (AWS/GCP).
+- **DataTable Analytics**: Interractive tables for "Top Resources" and "Historical Trend" with Search, Pagination, and Page Size controls.
 - **Advanced Reports**: Supports calendar-aligned timeframes (Today, This Week, This Month, This Year, Last Year, 2 Years Ago).
 - **Daily Fetcher**: Automated synchronization of cost data at `00:00 UTC` for maximum efficiency.
 - **Currency Toggle**: Easily switch between USD and IDR display.
@@ -94,7 +96,7 @@ CloudGazer uses **GitHub Actions** for:
 - [x] **Phase 3**: Frontend UI (Charts, Account Management)
 - [x] **Phase 4**: Alerting & Janitor (Anomalies, Idle Resources)
 - [x] **Phase 5**: CI/CD (GitHub Actions)
-- [x] **v1.1**: Cost Forecasting, Budget Planning, & Advanced Reports
+- [x] **v1.1.1**: Analytics filtering, DataTables, Forecasting, & Budgets
 
 ---
 

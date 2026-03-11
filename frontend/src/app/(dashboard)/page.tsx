@@ -13,6 +13,7 @@ import {
 import { Cloud, DollarSign, TrendingUp, RefreshCcw, Calendar, BarChart3, ArrowDownRight, ArrowUpRight, Layers } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { SimpleDataTable } from "./SimpleDataTable";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
@@ -58,15 +59,19 @@ export default function DashboardPage() {
     const [loading, setLoading] = useState(true);
     const [timeframe, setTimeframe] = useState("30d");
     const [granularity, setGranularity] = useState("day");
+    const [accounts, setAccounts] = useState<{ id: string; account_name: string; provider: string }[]>([]);
+    const [selectedAccount, setSelectedAccount] = useState<string>("all");
+    const [selectedProvider, setSelectedProvider] = useState<string>("all");
 
     const fetchData = () => {
         setLoading(true);
+        const params = `range=${timeframe}&granularity=${granularity}&account_id=${selectedAccount === "all" ? "" : selectedAccount}&provider=${selectedProvider === "all" ? "" : selectedProvider}`;
         Promise.all([
-            fetch(`${API_BASE}/api/reports/advanced?range=${timeframe}&granularity=${granularity}`).then(r => r.json()),
-            fetch(`${API_BASE}/api/reports/resources?range=${timeframe}`).then(r => r.json()),
-            fetch(`${API_BASE}/api/reports/historical?range=${timeframe}&granularity=${granularity}`).then(r => r.json()),
-            fetch(`${API_BASE}/api/reports/comparison`).then(r => r.json()),
-            fetch(`${API_BASE}/api/reports/forecasting`).then(r => r.json())
+            fetch(`${API_BASE}/api/reports/advanced?${params}`).then(r => r.json()),
+            fetch(`${API_BASE}/api/reports/resources?${params}`).then(r => r.json()),
+            fetch(`${API_BASE}/api/reports/historical?${params}`).then(r => r.json()),
+            fetch(`${API_BASE}/api/reports/comparison?${params}`).then(r => r.json()),
+            fetch(`${API_BASE}/api/reports/forecasting?${params}`).then(r => r.json())
         ])
             .then(([rData, resData, hData, cData, fData]) => {
                 setRows(rData.reports ?? []);
@@ -85,7 +90,14 @@ export default function DashboardPage() {
 
     useEffect(() => {
         fetchData();
-    }, [timeframe, granularity]);
+    }, [timeframe, granularity, selectedAccount, selectedProvider]);
+
+    useEffect(() => {
+        fetch(`${API_BASE}/api/accounts`)
+            .then(r => r.json())
+            .then(data => setAccounts(data.accounts ?? []))
+            .catch(() => setAccounts([]));
+    }, []);
 
     const handleRefresh = async () => {
         setLoading(true);
@@ -137,6 +149,37 @@ export default function DashboardPage() {
                     </p>
                 </div>
                 <div className="flex items-center gap-3">
+                    <Select value={selectedProvider} onValueChange={(val) => {
+                        setSelectedProvider(val ?? "all");
+                        setSelectedAccount("all"); // Reset account when provider changes
+                    }}>
+                        <SelectTrigger className="w-[140px] bg-card border-border">
+                            <SelectValue placeholder="All Providers" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-card border-border">
+                            <SelectItem value="all">All Providers</SelectItem>
+                            <SelectItem value="aws">AWS</SelectItem>
+                            <SelectItem value="gcp">GCP</SelectItem>
+                        </SelectContent>
+                    </Select>
+
+                    <Select value={selectedAccount} onValueChange={(val) => setSelectedAccount(val ?? "all")}>
+                        <SelectTrigger className="w-[180px] bg-card border-border">
+                            <SelectValue placeholder="All Accounts" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-card border-border">
+                            <SelectItem value="all">All Accounts</SelectItem>
+                            {accounts
+                                .filter(a => selectedProvider === "all" || a.provider === selectedProvider)
+                                .map(acc => (
+                                    <SelectItem key={acc.id} value={acc.id}>
+                                        {acc.account_name}
+                                    </SelectItem>
+                                ))
+                            }
+                        </SelectContent>
+                    </Select>
+
                     <Select value={`${timeframe}-${granularity}`} onValueChange={(val) => {
                         if (!val) return;
                         const [t, g] = val.split("-");
@@ -227,39 +270,39 @@ export default function DashboardPage() {
                         <CardDescription>Most expensive services for selected period</CardDescription>
                     </CardHeader>
                     <CardContent>
-                        <Table>
-                            <TableHeader>
-                                <TableRow className="border-border">
-                                    <TableHead className="text-muted-foreground w-[40%]">Resource / Service</TableHead>
-                                    <TableHead className="text-muted-foreground">Account</TableHead>
-                                    <TableHead className="text-muted-foreground text-right">Cost (USD)</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {resources.length === 0 ? (
-                                    <TableRow>
-                                        <TableCell colSpan={3} className="text-center py-12 text-muted-foreground">
-                                            No resource data found
-                                        </TableCell>
-                                    </TableRow>
-                                ) : (
-                                    resources.map((res, i) => (
-                                        <TableRow key={i} className="border-border hover:bg-muted/50 transition-colors">
-                                            <TableCell className="font-medium text-foreground py-4">
-                                                {res.resource_name}
-                                                <Badge variant="outline" className="ml-2 text-[10px] py-0 border-border text-muted-foreground uppercase">
-                                                    {res.provider}
-                                                </Badge>
-                                            </TableCell>
-                                            <TableCell className="text-muted-foreground">{res.account_name}</TableCell>
-                                            <TableCell className="text-right text-foreground font-mono font-semibold">
-                                                ${res.total_usd.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                                            </TableCell>
-                                        </TableRow>
-                                    ))
-                                )}
-                            </TableBody>
-                        </Table>
+                        <SimpleDataTable
+                            data={resources}
+                            searchKeys={["resource_name", "account_name", "provider"]}
+                            searchPlaceholder="Search resources or accounts..."
+                            columns={[
+                                {
+                                    header: "Resource / Service",
+                                    accessorKey: (row) => (
+                                        <div className="font-medium text-foreground py-1">
+                                            {row.resource_name}
+                                            <Badge variant="outline" className="ml-2 text-[10px] py-0 border-border text-muted-foreground uppercase">
+                                                {row.provider}
+                                            </Badge>
+                                        </div>
+                                    ),
+                                    className: "w-[45%]"
+                                },
+                                {
+                                    header: "Account",
+                                    accessorKey: "account_name",
+                                    className: "text-muted-foreground"
+                                },
+                                {
+                                    header: "Cost (USD)",
+                                    accessorKey: (row) => (
+                                        <div className="text-right text-foreground font-mono font-semibold">
+                                            ${row.total_usd.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                        </div>
+                                    ),
+                                    align: "right"
+                                }
+                            ]}
+                        />
                     </CardContent>
                 </Card>
 
@@ -272,40 +315,36 @@ export default function DashboardPage() {
                         </CardTitle>
                         <CardDescription>Complete historical comparison</CardDescription>
                     </CardHeader>
-                    <CardContent className="space-y-6 pt-4">
-                        {historical.length === 0 ? (
-                            <p className="text-center text-muted-foreground py-12">No historical data</p>
-                        ) : (
-                            historical.map((h, i) => (
-                                <div key={i} className="space-y-2">
-                                    <div className="flex justify-between items-center text-sm">
-                                        <span className="text-muted-foreground font-medium">
-                                            {new Date(h.period).toLocaleDateString('en-US', {
+                    <CardContent>
+                        <SimpleDataTable
+                            data={historical}
+                            searchKeys={["period"]}
+                            searchPlaceholder="Search dates..."
+                            emptyMessage="No historical data found"
+                            columns={[
+                                {
+                                    header: "Period",
+                                    accessorKey: (row) => (
+                                        <div className="text-muted-foreground font-medium py-1">
+                                            {new Date(row.period).toLocaleDateString('en-US', {
                                                 month: granularity === 'month' ? 'long' : 'short',
                                                 year: granularity === 'month' ? 'numeric' : undefined,
                                                 day: granularity === 'day' ? 'numeric' : undefined
                                             })}
-                                        </span>
-                                        <span className="text-foreground font-bold">${h.total_usd.toFixed(2)}</span>
-                                    </div>
-                                    <div className="h-2 bg-muted rounded-full overflow-hidden">
-                                        <div
-                                            className="h-full bg-primary/70 rounded-full"
-                                            style={{ width: `${Math.min(100, (h.total_usd / (historical[0]?.total_usd || 1)) * 100)}%` }}
-                                        />
-                                    </div>
-                                </div>
-                            ))
-                        )}
-
-                        <div className="mt-8 pt-6 border-t border-border">
-                            <div className="flex items-center justify-between mb-4">
-                                <span className="text-sm text-muted-foreground">Historical Average</span>
-                                <span className="text-lg font-bold text-foreground">
-                                    ${(historical.reduce((a, b) => a + b.total_usd, 0) / (historical.length || 1)).toFixed(2)}
-                                </span>
-                            </div>
-                        </div>
+                                        </div>
+                                    )
+                                },
+                                {
+                                    header: "Cost (USD)",
+                                    accessorKey: (row) => (
+                                        <div className="text-right text-foreground font-bold font-mono">
+                                            ${row.total_usd.toFixed(2)}
+                                        </div>
+                                    ),
+                                    align: "right"
+                                }
+                            ]}
+                        />
                     </CardContent>
                 </Card>
             </div>

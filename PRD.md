@@ -1,4 +1,4 @@
-# PRD: Project CloudGazer (v1.1)
+# PRD: Project CloudGazer (v1.1.1)
 
 | Field | Detail |
 |-------|--------|
@@ -29,6 +29,8 @@ Membangun platform **monitoring biaya cloud (AWS & GCP)** mandiri yang memungkin
 | **Multi-Cloud Overview** | Visualisasi gabungan biaya AWS dan GCP dalam satu grafik (Area Chart). |
 | **Daily Fetcher** | Sinkronisasi data biaya otomatis sekali sehari (`00:00 UTC`) untuk efisiensi API. |
 | **Tag/Label Filtering** | Breakdown biaya berdasarkan project (misal: `Zenith-X`, `SkyBridge`). |
+| **Account & Provider Filter** | Filter data dashboard berdasarkan akun spesifik atau provider (AWS/GCP). |
+| **Advanced DataTables** | Tabel interaktif dengan fitur Search, Pagination, dan Page Size untuk resource dan tren histori. |
 | **Currency Toggle** | Konversi tampilan biaya dari USD ke IDR. |
 
 ### B. Dynamic Management & Security
@@ -122,7 +124,7 @@ CREATE TABLE budgets (
 | **Phase 3** | Frontend | Build Dashboard UI dengan shadcn/ui (Charts & Tables). |
 | **Phase 4** | Alerting | Implementasi Anomaly Detection dan Notification Engine. |
 | **Phase 5** | CI/CD | [DONE] Setup GitHub Actions untuk Cron Job dan auto-deploy ke Koyeb/Vercel. |
-| **Phase 6** | v1.1 Enhancements | [DONE] Cost Forecasting, Budget Planning, & Advanced Analytics. |
+| **Phase 6** | v1.1.1 Enhancements | [DONE] Accounting/Provider Filtering, DataTables, & Advanced Analytics. |
 
 ---
 
