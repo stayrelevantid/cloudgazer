@@ -294,7 +294,8 @@ func main() {
 				prev_month,
 				(current_month - prev_month) as delta,
 				CASE 
-					WHEN prev_month = 0 THEN 0 
+					WHEN prev_month = 0 AND current_month > 0 THEN 100
+					WHEN prev_month = 0 AND current_month = 0 THEN 0
 					ELSE ((current_month - prev_month) / prev_month) * 100 
 				END as delta_percent
 			FROM data
