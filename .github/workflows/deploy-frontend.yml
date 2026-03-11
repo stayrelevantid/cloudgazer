@@ -19,6 +19,6 @@ jobs:
 
       - name: Deploy to Vercel
         run: |
-          vercel deploy frontend --prod --token ${{ secrets.VERCEL_TOKEN }} --yes \
+          vercel deploy frontend --name cloudgazer --prod --token ${{ secrets.VERCEL_TOKEN }} --yes \
             -e VERCEL_ORG_ID=${{ secrets.VERCEL_ORG_ID }} \
             -e VERCEL_PROJECT_ID=${{ secrets.VERCEL_PROJECT_ID }}
