@@ -47,7 +47,7 @@ type AlertConfig = {
     provider: string;
     channel: string;
     webhook_url: string;
-    daily_threshold: number;
+    weekly_threshold: number;
     is_active: boolean;
 };
 
@@ -110,7 +110,7 @@ export default function AlertsPage() {
                     account_id: selectedAccount,
                     channel,
                     webhook_url: webhookUrl,
-                    daily_threshold: parseFloat(threshold),
+                    weekly_threshold: parseFloat(threshold),
                 }),
             });
 
@@ -209,7 +209,7 @@ export default function AlertsPage() {
                         <DialogHeader>
                             <DialogTitle>Configure Alert</DialogTitle>
                             <DialogDescription className="text-muted-foreground">
-                                Receive notifications when daily cost exceeds limit.
+                                Receive notifications when weekly cost exceeds limit.
                             </DialogDescription>
                         </DialogHeader>
                         <div className="grid gap-4 py-4">
@@ -254,7 +254,7 @@ export default function AlertsPage() {
                             </div>
 
                             <div className="grid gap-2">
-                                <Label htmlFor="limit" className="text-muted-foreground">Daily Threshold (USD)</Label>
+                                <Label htmlFor="limit" className="text-muted-foreground">Weekly Threshold (USD)</Label>
                                 <Input
                                     id="limit"
                                     type="number"
@@ -290,7 +290,7 @@ export default function AlertsPage() {
                         <TableHeader>
                             <TableRow className="border-border hover:bg-transparent">
                                 <TableHead className="text-muted-foreground">Account Name</TableHead>
-                                <TableHead className="text-muted-foreground">Limit (USD)</TableHead>
+                                <TableHead className="text-muted-foreground">Weekly Limit (USD)</TableHead>
                                 <TableHead className="text-muted-foreground">Channel</TableHead>
                                 <TableHead className="text-muted-foreground">Status</TableHead>
                                 <TableHead className="text-muted-foreground text-right">Actions</TableHead>
@@ -320,7 +320,7 @@ export default function AlertsPage() {
                                             <span className="text-muted-foreground text-xs ml-2 uppercase">({al.provider})</span>
                                         </TableCell>
                                         <TableCell className="text-primary font-mono">
-                                            ${al.daily_threshold.toFixed(2)}
+                                            ${al.weekly_threshold.toFixed(2)}
                                         </TableCell>
                                         <TableCell>
                                             <Badge variant="outline" className="border-border text-muted-foreground capitalize">

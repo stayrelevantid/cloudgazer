@@ -10,20 +10,38 @@ import {
     XAxis,
     YAxis,
 } from "recharts";
-import { Cloud, DollarSign, TrendingUp, RefreshCcw } from "lucide-react";
+import { Cloud, DollarSign, TrendingUp, RefreshCcw, Calendar, BarChart3, ArrowDownRight, ArrowUpRight, Layers } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from "@/components/ui/table";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
-type ReportRow = { date: string; provider: string; total_usd: number };
+type ReportRow = { period: string; provider: string; total_usd: number };
 type ChartPoint = { date: string; aws: number; gcp: number };
+type ResourceRow = { account_name: string; provider: string; resource_name: string; total_usd: number };
+type HistoricalRow = { period: string; total_usd: number };
 
 function buildChartData(rows: ReportRow[]): ChartPoint[] {
     const map: Record<string, ChartPoint> = {};
     for (const row of rows) {
-        const d = row.date.slice(0, 10);
+        const d = row.period.slice(0, 10);
         if (!map[d]) map[d] = { date: d, aws: 0, gcp: 0 };
         if (row.provider === "aws") map[d].aws += row.total_usd;
         if (row.provider === "gcp") map[d].gcp += row.total_usd;
@@ -33,20 +51,41 @@ function buildChartData(rows: ReportRow[]): ChartPoint[] {
 
 export default function DashboardPage() {
     const [rows, setRows] = useState<ReportRow[]>([]);
+    const [comparison, setComparison] = useState<{ provider: string; current_total: number; prev_total: number }[]>([]);
+    const [forecasts, setForecasts] = useState<{ provider: string; total_so_far: number; projected_total: number }[]>([]);
+    const [resources, setResources] = useState<ResourceRow[]>([]);
+    const [historical, setHistorical] = useState<HistoricalRow[]>([]);
     const [loading, setLoading] = useState(true);
+    const [timeframe, setTimeframe] = useState("30d");
+    const [granularity, setGranularity] = useState("day");
 
     const fetchData = () => {
         setLoading(true);
-        fetch(`${API_BASE}/api/reports?days=30`)
-            .then((r) => r.json())
-            .then((data) => setRows(data.reports ?? []))
-            .catch(() => setRows([]))
+        Promise.all([
+            fetch(`${API_BASE}/api/reports/advanced?range=${timeframe}&granularity=${granularity}`).then(r => r.json()),
+            fetch(`${API_BASE}/api/reports/resources?range=${timeframe}`).then(r => r.json()),
+            fetch(`${API_BASE}/api/reports/historical?range=${timeframe}&granularity=${granularity}`).then(r => r.json()),
+            fetch(`${API_BASE}/api/reports/comparison`).then(r => r.json()),
+            fetch(`${API_BASE}/api/reports/forecasting`).then(r => r.json())
+        ])
+            .then(([rData, resData, hData, cData, fData]) => {
+                setRows(rData.reports ?? []);
+                setResources(resData.resources ?? []);
+                setHistorical(hData.historical ?? []);
+                setComparison(cData.comparison ?? []);
+                setForecasts(fData.forecasting ?? []);
+            })
+            .catch(() => {
+                setRows([]);
+                setResources([]);
+                setHistorical([]);
+            })
             .finally(() => setLoading(false));
     };
 
     useEffect(() => {
         fetchData();
-    }, []);
+    }, [timeframe, granularity]);
 
     const handleRefresh = async () => {
         setLoading(true);
@@ -77,129 +116,199 @@ export default function DashboardPage() {
 
     const totalAll = totalAWS + totalGCP;
 
+    // Calculate MoM
+    const prevTotalAll = comparison.reduce((s, c) => s + c.prev_total, 0);
+    const momChange = prevTotalAll > 0 ? ((totalAll - prevTotalAll) / prevTotalAll) * 100 : 0;
+
+    // Forecasting Total
+    const projectedTotalAll = forecasts.reduce((s, f) => s + f.projected_total, 0);
+
     return (
         <div className="space-y-8">
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-bold text-foreground">Overview</h1>
                     <p className="text-muted-foreground text-sm mt-1">
-                        Cloud costs for the last 30 days
+                        {timeframe === "today" ? "Cloud costs for today" : 
+                         timeframe === "last_year" ? `Cloud costs for ${new Date().getFullYear() - 1}` :
+                         timeframe === "2y_ago" ? `Cloud costs for ${new Date().getFullYear() - 2}` :
+                         timeframe === "365d" ? "Cloud costs for this year" : 
+                         `Cloud costs for the last ${timeframe.replace('d', ' days')}`}
                     </p>
                 </div>
-                <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-2 border-border hover:bg-muted"
-                    onClick={handleRefresh}
-                    disabled={loading}
-                >
-                    <RefreshCcw size={14} className={loading ? "animate-spin" : ""} />
-                    Sync Data
-                </Button>
+                <div className="flex items-center gap-3">
+                    <Select value={`${timeframe}-${granularity}`} onValueChange={(val) => {
+                        if (!val) return;
+                        const [t, g] = val.split("-");
+                        setTimeframe(t);
+                        setGranularity(g);
+                    }}>
+                        <SelectTrigger className="w-[140px] bg-card border-border">
+                            <SelectValue placeholder="Timeframe" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-card border-border">
+                            <SelectItem value="today-day">Today</SelectItem>
+                            <SelectItem value="7d-day">This Week</SelectItem>
+                            <SelectItem value="30d-day">This Month</SelectItem>
+                            <SelectItem value="90d-month">Last 3 Months</SelectItem>
+                            <SelectItem value="180d-month">Last 6 Months</SelectItem>
+                            <SelectItem value="365d-month">This Year</SelectItem>
+                            <SelectItem value="last_year-month">Last Year</SelectItem>
+                            <SelectItem value="2y_ago-month">2 Years Ago</SelectItem>
+                        </SelectContent>
+                    </Select>
+
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-2 border-border hover:bg-muted"
+                        onClick={handleRefresh}
+                        disabled={loading}
+                    >
+                        <RefreshCcw size={14} className={loading ? "animate-spin" : ""} />
+                        Sync Data
+                    </Button>
+                </div>
             </div>
 
             {/* Summary Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className={`grid grid-cols-1 sm:grid-cols-2 ${(timeframe === "30d") ? "lg:grid-cols-4" : "lg:grid-cols-2"} gap-4`}>
                 <SummaryCard
-                    title="Total AWS Cost"
-                    value={`$${totalAWS.toFixed(2)}`}
-                    icon={<Cloud size={18} className="text-orange-400" />}
-                    color="orange"
-                />
-                <SummaryCard
-                    title="Total GCP Cost"
-                    value={`$${totalGCP.toFixed(2)}`}
-                    icon={<Cloud size={18} className="text-blue-400" />}
-                    color="blue"
-                />
-                <SummaryCard
-                    title="Combined Total"
+                    title={timeframe === "today" ? "Today's Cost" : 
+                           timeframe === "last_year" ? `Total Cost (${new Date().getFullYear() - 1})` :
+                           timeframe === "2y_ago" ? `Total Cost (${new Date().getFullYear() - 2})` :
+                           timeframe === "365d" ? "This Year's Cost" : "Total Cost"}
                     value={`$${totalAll.toFixed(2)}`}
                     icon={<DollarSign size={18} className="text-primary" />}
                     color="primary"
                 />
+
+                {(timeframe === "30d") && (
+                    <>
+                        <SummaryCard
+                            title="MoM Change"
+                            value={`${momChange >= 0 ? "+" : ""}${momChange.toFixed(1)}%`}
+                            icon={<TrendingUp size={18} className={momChange > 0 ? "text-destructive" : "text-emerald-400"} />}
+                            color={momChange > 0 ? "destructive" : "emerald"}
+                            subtitle={`vs $${prevTotalAll.toFixed(2)} last month`}
+                        />
+                        <SummaryCard
+                            title={`Forecasted ${new Intl.DateTimeFormat('en-US', { month: 'short' }).format(new Date())} Total`}
+                            value={`$${projectedTotalAll.toFixed(2)}`}
+                            icon={<RefreshCcw size={18} className="text-blue-400" />}
+                            color="blue"
+                            subtitle="Projected end of month"
+                        />
+                    </>
+                )}
+
+                <SummaryCard
+                    title={granularity === "day" ? (timeframe === "today" ? "Burn Status" : "Daily Burn Rate") : "Monthly Burn Rate"}
+                    value={timeframe === "today" ? "Stable" : 
+                        granularity === "day" 
+                        ? `$${(totalAll / (parseInt(timeframe) || 1)).toFixed(2)}` 
+                        : `$${(totalAll / 12).toFixed(2)}`
+                    }
+                    icon={<TrendingUp size={18} className="text-orange-400" />}
+                    color="orange"
+                    subtitle={granularity === "day" ? "Avg per day" : "Avg per month"}
+                />
             </div>
 
-            {/* Area Chart */}
-            <Card className="bg-card border-border">
-                <CardHeader className="flex flex-row items-center justify-between">
-                    <CardTitle className="text-foreground flex items-center gap-2">
-                        <TrendingUp size={18} className="text-primary" />
-                        Cost Trend (30 days)
-                    </CardTitle>
-                    <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                            <span className="inline-block w-3 h-3 rounded-sm bg-orange-500" />
-                            AWS
-                        </span>
-                        <span className="flex items-center gap-1">
-                            <span className="inline-block w-3 h-3 rounded-sm bg-blue-500" />
-                            GCP
-                        </span>
-                    </div>
-                </CardHeader>
-                <CardContent>
-                    {loading ? (
-                        <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">
-                            Loading...
+            {/* Bottom Section: Resource Breakdown & Historical */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Top Resources Table */}
+                <Card className="lg:col-span-2 bg-card border-border">
+                    <CardHeader>
+                        <CardTitle className="text-foreground flex items-center gap-2">
+                            <Layers size={18} className="text-primary" />
+                            Top Expense Resources
+                        </CardTitle>
+                        <CardDescription>Most expensive services for selected period</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <Table>
+                            <TableHeader>
+                                <TableRow className="border-border">
+                                    <TableHead className="text-muted-foreground w-[40%]">Resource / Service</TableHead>
+                                    <TableHead className="text-muted-foreground">Account</TableHead>
+                                    <TableHead className="text-muted-foreground text-right">Cost (USD)</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {resources.length === 0 ? (
+                                    <TableRow>
+                                        <TableCell colSpan={3} className="text-center py-12 text-muted-foreground">
+                                            No resource data found
+                                        </TableCell>
+                                    </TableRow>
+                                ) : (
+                                    resources.map((res, i) => (
+                                        <TableRow key={i} className="border-border hover:bg-muted/50 transition-colors">
+                                            <TableCell className="font-medium text-foreground py-4">
+                                                {res.resource_name}
+                                                <Badge variant="outline" className="ml-2 text-[10px] py-0 border-border text-muted-foreground uppercase">
+                                                    {res.provider}
+                                                </Badge>
+                                            </TableCell>
+                                            <TableCell className="text-muted-foreground">{res.account_name}</TableCell>
+                                            <TableCell className="text-right text-foreground font-mono font-semibold">
+                                                ${res.total_usd.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                            </TableCell>
+                                        </TableRow>
+                                    ))
+                                )}
+                            </TableBody>
+                        </Table>
+                    </CardContent>
+                </Card>
+
+                {/* Historical Comparison */}
+                <Card className="bg-card border-border">
+                    <CardHeader>
+                        <CardTitle className="text-foreground flex items-center gap-2">
+                            <BarChart3 size={18} className="text-primary" />
+                            Historical Trend
+                        </CardTitle>
+                        <CardDescription>Complete historical comparison</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-6 pt-4">
+                        {historical.length === 0 ? (
+                            <p className="text-center text-muted-foreground py-12">No historical data</p>
+                        ) : (
+                            historical.map((h, i) => (
+                                <div key={i} className="space-y-2">
+                                    <div className="flex justify-between items-center text-sm">
+                                        <span className="text-muted-foreground font-medium">
+                                            {new Date(h.period).toLocaleDateString('en-US', {
+                                                month: granularity === 'month' ? 'long' : 'short',
+                                                year: granularity === 'month' ? 'numeric' : undefined,
+                                                day: granularity === 'day' ? 'numeric' : undefined
+                                            })}
+                                        </span>
+                                        <span className="text-foreground font-bold">${h.total_usd.toFixed(2)}</span>
+                                    </div>
+                                    <div className="h-2 bg-muted rounded-full overflow-hidden">
+                                        <div
+                                            className="h-full bg-primary/70 rounded-full"
+                                            style={{ width: `${Math.min(100, (h.total_usd / (historical[0]?.total_usd || 1)) * 100)}%` }}
+                                        />
+                                    </div>
+                                </div>
+                            ))
+                        )}
+
+                        <div className="mt-8 pt-6 border-t border-border">
+                            <div className="flex items-center justify-between mb-4">
+                                <span className="text-sm text-muted-foreground">Historical Average</span>
+                                <span className="text-lg font-bold text-foreground">
+                                    ${(historical.reduce((a, b) => a + b.total_usd, 0) / (historical.length || 1)).toFixed(2)}
+                                </span>
+                            </div>
                         </div>
-                    ) : chartData.length === 0 ? (
-                        <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">
-                            No cost data yet. Run a fetch to populate the chart.
-                        </div>
-                    ) : (
-                        <ResponsiveContainer width="100%" height={280}>
-                            <AreaChart data={chartData}>
-                                <defs>
-                                    <linearGradient id="aws" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#f97316" stopOpacity={0.3} />
-                                        <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
-                                    </linearGradient>
-                                    <linearGradient id="gcp" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                                    </linearGradient>
-                                </defs>
-                                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                                <XAxis
-                                    dataKey="date"
-                                    tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
-                                    tickFormatter={(v) => v.slice(5)}
-                                />
-                                <YAxis
-                                    tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
-                                    tickFormatter={(v) => `$${v}`}
-                                />
-                                <Tooltip
-                                    contentStyle={{
-                                        backgroundColor: "var(--popover)",
-                                        border: "1px solid var(--border)",
-                                        borderRadius: 8,
-                                        color: "var(--popover-foreground)",
-                                    }}
-                                    formatter={(val: number) => [`$${val.toFixed(2)}`]}
-                                />
-                                <Area
-                                    type="monotone"
-                                    dataKey="aws"
-                                    name="AWS"
-                                    stroke="#f97316"
-                                    fill="url(#aws)"
-                                    strokeWidth={2}
-                                />
-                                <Area
-                                    type="monotone"
-                                    dataKey="gcp"
-                                    name="GCP"
-                                    stroke="#3b82f6"
-                                    fill="url(#gcp)"
-                                    strokeWidth={2}
-                                />
-                            </AreaChart>
-                        </ResponsiveContainer>
-                    )}
-                </CardContent>
-            </Card>
+                    </CardContent>
+                </Card>
+            </div>
         </div>
     );
 }
@@ -209,16 +318,20 @@ function SummaryCard({
     value,
     icon,
     color,
+    subtitle,
 }: {
     title: string;
     value: string;
     icon: React.ReactNode;
-    color: "orange" | "blue" | "primary";
+    color: "orange" | "blue" | "primary" | "destructive" | "emerald";
+    subtitle?: string;
 }) {
     const ring: Record<string, string> = {
         orange: "ring-orange-500/20 bg-orange-500/10",
         blue: "ring-blue-500/20 bg-blue-500/10",
         primary: "ring-primary/20 bg-primary/10",
+        destructive: "ring-destructive/20 bg-destructive/10",
+        emerald: "ring-emerald-500/20 bg-emerald-500/10",
     };
     return (
         <Card className="bg-card border-border shadow-sm">
@@ -227,6 +340,7 @@ function SummaryCard({
                     <div>
                         <p className="text-sm text-muted-foreground">{title}</p>
                         <p className="text-2xl font-bold text-foreground mt-1">{value}</p>
+                        {subtitle && <p className="text-[10px] text-muted-foreground mt-1">{subtitle}</p>}
                     </div>
                     <div className={`p-3 rounded-xl ring-1 ${ring[color]}`}>{icon}</div>
                 </div>

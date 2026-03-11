@@ -15,6 +15,18 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
 type Resource = {
@@ -47,6 +59,16 @@ export default function JanitorPage() {
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleRelease = (id: string) => {
+        // Mock release action
+        toast.success(`Resource ${id} scheduled for deletion`);
+        // Remove from local state for better UX
+        setResults(prev => prev.map(acc => ({
+            ...acc,
+            resources: acc.resources.filter(r => r.id !== id)
+        })).filter(acc => acc.resources.length > 0));
     };
 
     useEffect(() => {
@@ -148,10 +170,34 @@ export default function JanitorPage() {
                                                     </Badge>
                                                 </TableCell>
                                                 <TableCell className="text-right">
-                                                    <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive gap-1">
-                                                        <Trash2 size={14} />
-                                                        Release / Delete
-                                                    </Button>
+                                                    <AlertDialog>
+                                                        <AlertDialogTrigger 
+                                                            render={
+                                                                <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive gap-1">
+                                                                    <Trash2 size={14} />
+                                                                    Release / Delete
+                                                                </Button>
+                                                            }
+                                                        />
+                                                        <AlertDialogContent className="bg-card border-border">
+                                                            <AlertDialogHeader>
+                                                                <AlertDialogTitle className="text-foreground">Are you absolutely sure?</AlertDialogTitle>
+                                                                <AlertDialogDescription className="text-muted-foreground">
+                                                                    This action will permanently delete the resource <b>{item.id}</b> ({item.type}). 
+                                                                    This action cannot be undone.
+                                                                </AlertDialogDescription>
+                                                            </AlertDialogHeader>
+                                                            <AlertDialogFooter>
+                                                                <AlertDialogCancel className="border-border text-muted-foreground">Cancel</AlertDialogCancel>
+                                                                <AlertDialogAction 
+                                                                    onClick={() => handleRelease(item.id)}
+                                                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                                                >
+                                                                    Confirm Delete
+                                                                </AlertDialogAction>
+                                                            </AlertDialogFooter>
+                                                        </AlertDialogContent>
+                                                    </AlertDialog>
                                                 </TableCell>
                                             </TableRow>
                                         ))}

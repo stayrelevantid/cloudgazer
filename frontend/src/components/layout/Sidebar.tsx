@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { UserButton } from "@clerk/nextjs";
-import { LayoutDashboard, Cloud, BellRing, Sparkles } from "lucide-react";
+import { LayoutDashboard, Cloud, BellRing, Sparkles, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 import { ThemeToggle } from "./ThemeToggle";
@@ -11,6 +11,7 @@ import { ThemeToggle } from "./ThemeToggle";
 const navItems = [
     { label: "Dashboard", href: "/", icon: LayoutDashboard },
     { label: "Accounts", href: "/accounts", icon: Cloud },
+    { label: "Budgets", href: "/budgets", icon: Wallet },
     { label: "Alerts", href: "/alerts", icon: BellRing },
     { label: "Janitor", href: "/janitor", icon: Sparkles },
 ];
@@ -56,7 +57,7 @@ export default function Sidebar() {
                     <ThemeToggle />
                 </div>
                 <div className="px-2 pb-2">
-                    <p className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">Cloud Monitoring v1.0</p>
+                    <p className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">Cloud Monitoring v1.1</p>
                 </div>
             </div>
         </aside>

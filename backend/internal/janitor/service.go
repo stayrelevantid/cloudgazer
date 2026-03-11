@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/stayrelevant-id/cloudgazer/internal/aws"
 	"github.com/stayrelevant-id/cloudgazer/internal/database"
@@ -26,7 +27,7 @@ type JanitorResult struct {
 
 func (s *Service) GetIdleResources(ctx context.Context) ([]JanitorResult, error) {
 	// 1. Get all active cloud accounts
-	rows, err := s.db.Pool.Query(ctx, "SELECT id, provider, account_name FROM cloud_accounts WHERE is_active = true")
+	rows, err := s.db.Pool.Query(ctx, "SELECT id, provider, account_name, aws_ssm_path FROM cloud_accounts WHERE is_active = true")
 	if err != nil {
 		return nil, fmt.Errorf("failed to query accounts: %w", err)
 	}
@@ -34,14 +35,27 @@ func (s *Service) GetIdleResources(ctx context.Context) ([]JanitorResult, error)
 
 	var results []JanitorResult
 	for rows.Next() {
-		var id, provider, accountName string
-		if err := rows.Scan(&id, &provider, &accountName); err != nil {
+		var id, provider, accountName, ssmPath string
+		if err := rows.Scan(&id, &provider, &accountName, &ssmPath); err != nil {
 			log.Printf("Janitor: failed to scan account: %v", err)
 			continue
 		}
 
 		var resources []aws.IdleResource
-		if provider == "aws" {
+		if strings.HasPrefix(ssmPath, "TEST_MOCK_") {
+			log.Printf("Janitor: using MOCK data for %s", accountName)
+			shortID := id[:8]
+			if provider == "aws" {
+				resources = []aws.IdleResource{
+					{ID: fmt.Sprintf("vol-%s-ebs1", shortID), Type: "EBS", Name: fmt.Sprintf("temp-db-%s", accountName), CostMonthly: 12.50},
+					{ID: fmt.Sprintf("ip-%s-eip1", shortID), Type: "EIP", Name: "legacy-server-ip", CostMonthly: 3.60},
+				}
+			} else if provider == "gcp" {
+				resources = []aws.IdleResource{
+					{ID: fmt.Sprintf("disk-%s-gce1", shortID), Type: "GCE Disk", Name: "old-staging-disk", CostMonthly: 8.20},
+				}
+			}
+		} else if provider == "aws" {
 			jc, err := aws.NewJanitorClient(s.awsRegion)
 			if err != nil {
 				log.Printf("Janitor: failed to init AWS Janitor for %s: %v", accountName, err)

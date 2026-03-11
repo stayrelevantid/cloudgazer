@@ -1,4 +1,4 @@
-# PRD: Project CloudGazer (v1.0)
+# PRD: Project CloudGazer (v1.1)
 
 | Field | Detail |
 |-------|--------|
@@ -99,7 +99,15 @@ CREATE TABLE alert_configs (
     account_id       UUID REFERENCES cloud_accounts(id),
     channel          VARCHAR(20),    -- 'slack' | 'telegram'
     webhook_url      TEXT,
-    daily_threshold  DECIMAL(15, 2)
+    weekly_threshold DECIMAL(15, 2)
+);
+
+CREATE TABLE budgets (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    account_id  UUID REFERENCES cloud_accounts(id) UNIQUE,
+    amount      DECIMAL(15, 2),
+    is_active   BOOLEAN DEFAULT true,
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 ```
 
@@ -114,6 +122,7 @@ CREATE TABLE alert_configs (
 | **Phase 3** | Frontend | Build Dashboard UI dengan shadcn/ui (Charts & Tables). |
 | **Phase 4** | Alerting | Implementasi Anomaly Detection dan Notification Engine. |
 | **Phase 5** | CI/CD | [DONE] Setup GitHub Actions untuk Cron Job dan auto-deploy ke Koyeb/Vercel. |
+| **Phase 6** | v1.1 Enhancements | [DONE] Cost Forecasting, Budget Planning, & Advanced Analytics. |
 
 ---
 

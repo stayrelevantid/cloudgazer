@@ -1,4 +1,4 @@
-# ☁️ CloudGazer (v1.0)
+# ☁️ CloudGazer (v1.1)
 
 **CloudGazer** is a self-hosted multi-cloud cost monitoring platform designed to help you track daily spend across AWS and GCP while maintaining **Rp 0 operating costs** using free-tier infrastructure.
 
@@ -8,6 +8,7 @@
 
 ### 📊 Dashboard & Monitoring
 - **Multi-Cloud Overview**: Visualize combined AWS and GCP costs in a unified area chart.
+- **Advanced Reports**: Supports calendar-aligned timeframes (Today, This Week, This Month, This Year, Last Year, 2 Years Ago).
 - **Daily Fetcher**: Automated synchronization of cost data at `00:00 UTC` for maximum efficiency.
 - **Currency Toggle**: Easily switch between USD and IDR display.
 
@@ -17,7 +18,9 @@
 - **Authentication**: Secure login powered by **Clerk**. All dashboard routes (`/`, `/accounts`, etc.) are protected and require a signed-in session.
 
 ### ⚠️ Alerting & Janitor
-- **Threshold Alerts**: Receive Slack/Telegram notifications when daily spend exceeds your defined limit.
+- **Weekly Threshold Alerts**: Receive Slack/Telegram notifications when weekly spend exceeds your defined limit.
+- **Budget Planning**: Set monthly budgets per account with visual progress tracking.
+- **Cost Forecasting**: Predictive spend analysis based on historical trends (linear regression).
 - **Anomaly Detection**: Automatic alerts if today's cost surges **>20%** compared to the 7-day average.
 - **Janitor (Idle Resources)**: Identify and clean up unattached EBS volumes and unassociated Elastic IPs (AWS).
 - **Integration Tester**: "Test Connection" button to validate webhook configurations instantly.
@@ -91,7 +94,7 @@ CloudGazer uses **GitHub Actions** for:
 - [x] **Phase 3**: Frontend UI (Charts, Account Management)
 - [x] **Phase 4**: Alerting & Janitor (Anomalies, Idle Resources)
 - [x] **Phase 5**: CI/CD (GitHub Actions)
-- [ ] **v1.1**: Cost Forecasting & Budget Planning
+- [x] **v1.1**: Cost Forecasting, Budget Planning, & Advanced Reports
 
 ---
 
