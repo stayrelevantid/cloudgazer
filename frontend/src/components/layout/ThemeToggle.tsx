@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useState } from "react"
 import { Moon, Sun, Palette, Check } from "lucide-react"
 import { useTheme } from "next-themes"
 
@@ -25,6 +26,19 @@ const themes = [
 
 export function ThemeToggle() {
     const { setTheme, theme } = useTheme()
+    const [mounted, setMounted] = useState(false)
+
+    React.useEffect(() => {
+        setMounted(true)
+    }, [])
+
+    if (!mounted) {
+        return (
+            <Button variant="ghost" size="icon" className="w-9 px-0 text-muted-foreground">
+                <Palette className="h-[1.2rem] w-[1.2rem]" />
+            </Button>
+        )
+    }
 
     return (
         <DropdownMenu>

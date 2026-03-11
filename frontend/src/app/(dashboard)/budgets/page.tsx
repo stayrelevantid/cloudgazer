@@ -68,6 +68,11 @@ export default function BudgetsPage() {
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [loading, setLoading] = useState(true);
     const [isOpen, setIsOpen] = useState(false);
+    const [mounted, setMounted] = useState(false);
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
 
     const [selectedAccount, setSelectedAccount] = useState("");
     const [amount, setAmount] = useState("");
@@ -145,6 +150,8 @@ export default function BudgetsPage() {
             toast.error("Error deleting budget");
         }
     };
+
+    if (!mounted) return null;
 
     return (
         <div className="space-y-6">

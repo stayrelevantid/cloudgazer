@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import { Menu, LayoutDashboard, Cloud, BellRing } from "lucide-react"
+import { useEffect, useState } from "react"
 import { UserButton } from "@clerk/nextjs"
 import { usePathname } from "next/navigation"
 
@@ -24,6 +25,24 @@ const navItems = [
 
 export function Navbar() {
     const pathname = usePathname()
+    const [mounted, setMounted] = useState(false)
+
+    useEffect(() => {
+        setMounted(true)
+    }, [])
+
+    if (!mounted) {
+        return (
+            <header className="fixed top-0 left-0 right-0 h-16 border-b border-border bg-background/80 backdrop-blur-md z-40 lg:hidden flex items-center justify-between px-4">
+                <div className="flex items-center gap-4">
+                    <Button variant="ghost" size="icon" className="text-muted-foreground w-10">
+                        <Menu size={24} />
+                    </Button>
+                    <span className="font-bold text-lg">CloudGazer</span>
+                </div>
+            </header>
+        )
+    }
 
     return (
         <header className="fixed top-0 left-0 right-0 h-16 border-b border-border bg-background/80 backdrop-blur-md z-40 lg:hidden flex items-center justify-between px-4">
