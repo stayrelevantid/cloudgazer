@@ -188,11 +188,15 @@ export default function BudgetsPage() {
                                         <SelectValue placeholder="Select account" />
                                     </SelectTrigger>
                                     <SelectContent className="bg-card border-border text-foreground">
-                                        {accounts.map(acc => (
-                                            <SelectItem key={acc.id} value={acc.id}>
-                                                {acc.account_name} ({acc.provider.toUpperCase()})
-                                            </SelectItem>
-                                        ))}
+                                        {accounts.map(acc => {
+                                            const hasBudget = budgets.some(b => b.account_id === acc.id);
+                                            return (
+                                                <SelectItem key={acc.id} value={acc.id} disabled={hasBudget && !editingBudget}>
+                                                    {acc.account_name} ({acc.provider.toUpperCase()})
+                                                    {hasBudget && !editingBudget && " (Has Budget)"}
+                                                </SelectItem>
+                                            );
+                                        })}
                                     </SelectContent>
                                 </Select>
                             </div>
