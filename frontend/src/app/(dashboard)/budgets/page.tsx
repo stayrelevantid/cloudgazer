@@ -163,12 +163,12 @@ export default function BudgetsPage() {
                         setAmount("");
                     }
                 }}>
-                    <DialogTrigger>
+                    <DialogTrigger render={
                         <Button className="bg-primary hover:bg-primary/90 text-primary-foreground gap-2">
                             <Plus size={16} />
                             Set Budget
                         </Button>
-                    </DialogTrigger>
+                    } />
                     <DialogContent className="bg-card border-border text-foreground sm:max-w-[425px]">
                         <DialogHeader>
                             <DialogTitle>Set Monthly Budget</DialogTitle>
@@ -266,7 +266,7 @@ export default function BudgetsPage() {
                                             </Button>
                                             
                                             <AlertDialog>
-                                                <AlertDialogTrigger>
+                                                <AlertDialogTrigger render={
                                                     <Button 
                                                         variant="ghost" 
                                                         size="icon" 
@@ -274,7 +274,7 @@ export default function BudgetsPage() {
                                                     >
                                                         <Trash2 size={16} />
                                                     </Button>
-                                                </AlertDialogTrigger>
+                                                } />
                                                 <AlertDialogContent className="bg-card border-border text-foreground">
                                                     <AlertDialogHeader>
                                                         <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
