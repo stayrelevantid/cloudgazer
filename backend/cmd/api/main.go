@@ -258,23 +258,49 @@ func main() {
 			return
 		}
 
-		rows, err := db.Pool.Query(r.Context(), `
+		extraWhere := ""
+		accountID := r.URL.Query().Get("account_id")
+		if accountID != "" {
+			extraWhere += fmt.Sprintf(" AND account_id = '%s'", accountID)
+		}
+		provider := r.URL.Query().Get("provider")
+		if provider != "" {
+			extraWhere += fmt.Sprintf(" AND ca.provider = '%s'", provider)
+		}
+
+		rows, err := db.Pool.Query(r.Context(), fmt.Sprintf(`
 			WITH ranges AS (
 				SELECT 
 					DATE_TRUNC('month', CURRENT_DATE) as current_start,
 					DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month') as prev_start,
 					DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 second' as prev_end
+			),
+			data AS (
+				SELECT 
+					cr.tag_name,
+					ca.provider,
+					SUM(CASE WHEN cr.record_date >= r.current_start THEN cr.amount_usd ELSE 0 END) as current_month,
+					SUM(CASE WHEN cr.record_date >= r.prev_start AND cr.record_date <= r.prev_end THEN cr.amount_usd ELSE 0 END) as prev_month
+				FROM cost_reports cr
+				JOIN cloud_accounts ca ON ca.id = cr.account_id
+				CROSS JOIN ranges r
+				WHERE cr.record_date >= r.prev_start %s
+				GROUP BY cr.tag_name, ca.provider
 			)
 			SELECT 
-				ca.provider,
-				SUM(CASE WHEN cr.record_date >= r.current_start THEN cr.amount_usd ELSE 0 END) as current_month,
-				SUM(CASE WHEN cr.record_date >= r.prev_start AND cr.record_date <= r.prev_end THEN cr.amount_usd ELSE 0 END) as prev_month
-			FROM cost_reports cr
-			JOIN cloud_accounts ca ON ca.id = cr.account_id
-			CROSS JOIN ranges r
-			WHERE cr.record_date >= r.prev_start
-			GROUP BY ca.provider
-		`)
+				tag_name,
+				provider,
+				current_month,
+				prev_month,
+				(current_month - prev_month) as delta,
+				CASE 
+					WHEN prev_month = 0 THEN 0 
+					ELSE ((current_month - prev_month) / prev_month) * 100 
+				END as delta_percent
+			FROM data
+			WHERE current_month > 0 OR prev_month > 0
+			ORDER BY current_month DESC
+		`, extraWhere))
 
 		if err != nil {
 			log.Printf("Comparison query error: %v", err)
@@ -284,14 +310,17 @@ func main() {
 		defer rows.Close()
 
 		type CompRow struct {
+			Service      string  `json:"service"`
 			Provider     string  `json:"provider"`
 			CurrentTotal float64 `json:"current_total"`
 			PrevTotal    float64 `json:"prev_total"`
+			Delta        float64 `json:"delta"`
+			DeltaPercent float64 `json:"delta_percent"`
 		}
 		comparisons := []CompRow{}
 		for rows.Next() {
 			var row CompRow
-			if err := rows.Scan(&row.Provider, &row.CurrentTotal, &row.PrevTotal); err != nil {
+			if err := rows.Scan(&row.Service, &row.Provider, &row.CurrentTotal, &row.PrevTotal, &row.Delta, &row.DeltaPercent); err != nil {
 				continue
 			}
 			comparisons = append(comparisons, row)
