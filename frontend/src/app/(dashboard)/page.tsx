@@ -38,6 +38,7 @@ type ReportRow = { period: string; provider: string; total_usd: number };
 type ChartPoint = { date: string; aws: number; gcp: number };
 type ResourceRow = { account_name: string; provider: string; resource_name: string; total_usd: number };
 type HistoricalRow = { period: string; total_usd: number };
+type ForecastRow = { provider: string; total_so_far: number; projected_total: number; budget: number };
 
 function buildChartData(rows: ReportRow[]): ChartPoint[] {
     const map: Record<string, ChartPoint> = {};
@@ -53,7 +54,7 @@ function buildChartData(rows: ReportRow[]): ChartPoint[] {
 export default function DashboardPage() {
     const [rows, setRows] = useState<ReportRow[]>([]);
     const [comparison, setComparison] = useState<{ provider: string; current_total: number; prev_total: number }[]>([]);
-    const [forecasts, setForecasts] = useState<{ provider: string; total_so_far: number; projected_total: number }[]>([]);
+    const [forecasts, setForecasts] = useState<ForecastRow[]>([]);
     const [resources, setResources] = useState<ResourceRow[]>([]);
     const [historical, setHistorical] = useState<HistoricalRow[]>([]);
     const [loading, setLoading] = useState(true);
@@ -132,8 +133,23 @@ export default function DashboardPage() {
     const prevTotalAll = comparison.reduce((s, c) => s + c.prev_total, 0);
     const momChange = prevTotalAll > 0 ? ((totalAll - prevTotalAll) / prevTotalAll) * 100 : 0;
 
-    // Forecasting Total
+    // Forecasting Analytics
     const projectedTotalAll = forecasts.reduce((s, f) => s + f.projected_total, 0);
+    const totalBudgetAll = forecasts.reduce((s, f) => s + f.budget, 0);
+    const budgetUsagePercent = totalBudgetAll > 0 ? (projectedTotalAll / totalBudgetAll) * 100 : 0;
+
+    let warningStatus = "On Track";
+    let warningColor = "text-emerald-400";
+    let warningBg = "bg-emerald-400/10";
+    if (budgetUsagePercent > 100) {
+        warningStatus = "Over Budget";
+        warningColor = "text-destructive";
+        warningBg = "bg-destructive/10";
+    } else if (budgetUsagePercent > 80) {
+        warningStatus = "At Risk";
+        warningColor = "text-orange-400";
+        warningBg = "bg-orange-400/10";
+    }
 
     return (
         <div className="space-y-8">
@@ -241,6 +257,24 @@ export default function DashboardPage() {
                             icon={<RefreshCcw size={18} className="text-blue-400" />}
                             color="blue"
                             subtitle="Projected end of month"
+                            footer={totalBudgetAll > 0 && (
+                                <div className="space-y-3">
+                                    <div className="flex justify-between items-center">
+                                        <Badge variant="outline" className={`text-[10px] font-bold uppercase ${warningBg} ${warningColor} border-none`}>
+                                            {warningStatus}
+                                        </Badge>
+                                        <span className="text-[10px] text-muted-foreground font-semibold">
+                                            Budget: ${totalBudgetAll.toFixed(0)}
+                                        </span>
+                                    </div>
+                                    <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+                                        <div 
+                                            className={`h-full transition-all duration-1000 ${budgetUsagePercent > 100 ? "bg-destructive" : budgetUsagePercent > 80 ? "bg-orange-400" : "bg-primary"}`}
+                                            style={{ width: `${Math.min(100, budgetUsagePercent)}%` }}
+                                        />
+                                    </div>
+                                </div>
+                            )}
                         />
                     </>
                 )}
@@ -358,12 +392,14 @@ function SummaryCard({
     icon,
     color,
     subtitle,
+    footer, // Added footer for budget visualization
 }: {
     title: string;
     value: string;
     icon: React.ReactNode;
     color: "orange" | "blue" | "primary" | "destructive" | "emerald";
     subtitle?: string;
+    footer?: React.ReactNode;
 }) {
     const ring: Record<string, string> = {
         orange: "ring-orange-500/20 bg-orange-500/10",
@@ -373,16 +409,19 @@ function SummaryCard({
         emerald: "ring-emerald-500/20 bg-emerald-500/10",
     };
     return (
-        <Card className="bg-card border-border shadow-sm">
+        <Card className="bg-card border-border shadow-sm group hover:shadow-md transition-all duration-300">
             <CardContent className="pt-6">
                 <div className="flex items-center justify-between">
-                    <div>
-                        <p className="text-sm text-muted-foreground">{title}</p>
-                        <p className="text-2xl font-bold text-foreground mt-1">{value}</p>
-                        {subtitle && <p className="text-[10px] text-muted-foreground mt-1">{subtitle}</p>}
+                    <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-muted-foreground uppercase tracking-widest">{title}</p>
+                        <p className="text-2xl font-bold text-foreground mt-1 tracking-tight">{value}</p>
+                        {subtitle && <p className="text-[10px] text-muted-foreground mt-1 font-medium">{subtitle}</p>}
                     </div>
-                    <div className={`p-3 rounded-xl ring-1 ${ring[color]}`}>{icon}</div>
+                    <div className={`p-3 rounded-xl ring-1 ${ring[color]} transition-transform duration-300 group-hover:scale-110`}>
+                        {icon}
+                    </div>
                 </div>
+                {footer && <div className="mt-4 pt-4 border-t border-border/50">{footer}</div>}
             </CardContent>
         </Card>
     );

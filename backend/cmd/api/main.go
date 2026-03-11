@@ -341,26 +341,48 @@ func main() {
 			return
 		}
 
-		// Simple Linear Regression / Average Run Rate
-		// Formula: (Total Cost in Month / Days Elapsed) * Total Days in Month
-		rows, err := db.Pool.Query(r.Context(), `
+		extraWhere := ""
+		accountID := r.URL.Query().Get("account_id")
+		if accountID != "" {
+			extraWhere += fmt.Sprintf(" AND account_id = '%s'", accountID)
+		}
+		providerParam := r.URL.Query().Get("provider")
+		if providerParam != "" {
+			extraWhere += fmt.Sprintf(" AND ca.provider = '%s'", providerParam)
+		}
+
+		// Projection Logic:
+		// We calculate daily run rate for the current month and multiply by days in month.
+		// We join with budgets to provide context.
+		rows, err := db.Pool.Query(r.Context(), fmt.Sprintf(`
 			WITH month_data AS (
 				SELECT 
 					ca.provider,
 					SUM(cr.amount_usd) as total_so_far,
-					EXTRACT(DAY FROM CURRENT_DATE) as days_elapsed,
+					GREATEST(EXTRACT(DAY FROM CURRENT_DATE), 1) as days_elapsed,
 					EXTRACT(DAY FROM (DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month' - INTERVAL '1 day')) as total_days
 				FROM cost_reports cr
 				JOIN cloud_accounts ca ON ca.id = cr.account_id
-				WHERE cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)
+				WHERE cr.record_date >= DATE_TRUNC('month', CURRENT_DATE) %s
+				GROUP BY ca.provider
+			),
+			budget_data AS (
+				SELECT 
+					ca.provider,
+					SUM(COALESCE(b.amount, 0)) as total_budget
+				FROM cloud_accounts ca
+				LEFT JOIN budgets b ON b.account_id = ca.id AND b.is_active = true
+				WHERE 1=1 %s
 				GROUP BY ca.provider
 			)
 			SELECT 
-				provider,
-				total_so_far,
-				(total_so_far / days_elapsed) * total_days as projected_total
-			FROM month_data
-		`)
+				m.provider,
+				m.total_so_far,
+				(m.total_so_far / m.days_elapsed) * m.total_days as projected_total,
+				COALESCE(b.total_budget, 0) as budget
+			FROM month_data m
+			LEFT JOIN budget_data b ON b.provider = m.provider
+		`, extraWhere, extraWhere))
 
 		if err != nil {
 			log.Printf("Forecasting query error: %v", err)
@@ -373,11 +395,12 @@ func main() {
 			Provider       string  `json:"provider"`
 			TotalSoFar     float64 `json:"total_so_far"`
 			ProjectedTotal float64 `json:"projected_total"`
+			Budget         float64 `json:"budget"`
 		}
 		forecasts := []ForecastRow{}
 		for rows.Next() {
 			var row ForecastRow
-			if err := rows.Scan(&row.Provider, &row.TotalSoFar, &row.ProjectedTotal); err != nil {
+			if err := rows.Scan(&row.Provider, &row.TotalSoFar, &row.ProjectedTotal, &row.Budget); err != nil {
 				continue
 			}
 			forecasts = append(forecasts, row)
