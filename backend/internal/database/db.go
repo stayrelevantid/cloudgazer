@@ -39,3 +39,28 @@ func (db *DB) Close() {
 		db.Pool.Close()
 	}
 }
+
+// Get7DayAverageCost calculates the average daily cost for a given account over the last 7 days
+func (db *DB) Get7DayAverageCost(ctx context.Context, accountID string) (float64, error) {
+	// Let's get the average of the daily totals for the 7 days prior to today
+	// "today" is generally the date the cron is running for (e.g. yesterday's cost)
+	// For simplicity, we just look at the last 7 distinct days in cost_reports
+	var avgCost float64
+	err := db.Pool.QueryRow(ctx, `
+		WITH daily_totals AS (
+			SELECT record_date, SUM(amount_usd) as daily_total
+			FROM cost_reports
+			WHERE account_id = $1
+			GROUP BY record_date
+			ORDER BY record_date DESC
+			LIMIT 7
+		)
+		SELECT COALESCE(AVG(daily_total), 0)
+		FROM daily_totals
+	`, accountID).Scan(&avgCost)
+
+	if err != nil {
+		return 0, err
+	}
+	return avgCost, nil
+}

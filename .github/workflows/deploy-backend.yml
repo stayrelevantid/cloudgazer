@@ -1,0 +1,23 @@
+name: Deploy Backend (Koyeb)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Koyeb CLI
+        run: curl https://raw.githubusercontent.com/koyeb/koyeb-cli/master/install.sh | sh
+
+      - name: Deploy to Koyeb
+        run: |
+          koyeb login --token ${{ secrets.KOYEB_TOKEN }}
+          koyeb service redeploy cloudgazer-backend

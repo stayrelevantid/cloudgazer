@@ -36,6 +36,7 @@ export default function RootLayout({
             defaultTheme="dark"
             enableSystem
             disableTransitionOnChange
+            themes={["light", "dark", "tangerine", "brutalist", "midnight"]}
           >
             {children}
             <Toaster richColors closeButton position="top-right" />

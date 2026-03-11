@@ -299,15 +299,15 @@ export default function AlertsPage() {
                         <TableBody>
                             {loading ? (
                                 <TableRow>
-                                    <TableCell colSpan={5} className="text-center text-zinc-500 py-12">
+                                    <TableCell colSpan={5} className="text-center text-muted-foreground py-12">
                                         Loading alerts...
                                     </TableCell>
                                 </TableRow>
                             ) : alerts.length === 0 ? (
                                 <TableRow>
                                     <TableCell colSpan={5} className="py-16">
-                                        <div className="flex flex-col items-center gap-3 text-zinc-500">
-                                            <BellRing size={36} className="text-zinc-700" />
+                                        <div className="flex flex-col items-center gap-3 text-muted-foreground">
+                                            <BellRing size={36} className="text-muted-foreground/40" />
                                             <p className="text-sm">No alert configurations defined.</p>
                                         </div>
                                     </TableCell>
@@ -333,7 +333,7 @@ export default function AlertsPage() {
                                                 className={
                                                     al.is_active
                                                         ? "border-green-500/50 text-green-400"
-                                                        : "border-zinc-600 text-zinc-500"
+                                                        : "border-border text-muted-foreground"
                                                 }
                                             >
                                                 {al.is_active ? "Active" : "Disabled"}

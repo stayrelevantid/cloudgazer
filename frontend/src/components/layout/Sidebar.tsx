@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { UserButton } from "@clerk/nextjs";
-import { LayoutDashboard, Cloud, BellRing } from "lucide-react";
+import { LayoutDashboard, Cloud, BellRing, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 import { ThemeToggle } from "./ThemeToggle";
@@ -12,6 +12,7 @@ const navItems = [
     { label: "Dashboard", href: "/", icon: LayoutDashboard },
     { label: "Accounts", href: "/accounts", icon: Cloud },
     { label: "Alerts", href: "/alerts", icon: BellRing },
+    { label: "Janitor", href: "/janitor", icon: Sparkles },
 ];
 
 export default function Sidebar() {

@@ -198,15 +198,15 @@ export default function AccountsPage() {
                         <TableBody>
                             {loading ? (
                                 <TableRow>
-                                    <TableCell colSpan={5} className="text-center text-zinc-500 py-12">
+                                    <TableCell colSpan={5} className="text-center text-muted-foreground py-12">
                                         Loading accounts...
                                     </TableCell>
                                 </TableRow>
                             ) : accounts.length === 0 ? (
                                 <TableRow>
                                     <TableCell colSpan={5} className="py-16">
-                                        <div className="flex flex-col items-center gap-3 text-zinc-500">
-                                            <Cloud size={36} className="text-zinc-700" />
+                                        <div className="flex flex-col items-center gap-3 text-muted-foreground">
+                                            <Cloud size={36} className="text-muted-foreground/40" />
                                             <p className="text-sm">No cloud accounts connected yet.</p>
                                             <p className="text-xs">Click "+ Add Account" to get started.</p>
                                         </div>
@@ -230,7 +230,7 @@ export default function AccountsPage() {
                                                 {acc.provider.toUpperCase()}
                                             </Badge>
                                         </TableCell>
-                                        <TableCell className="text-zinc-400 text-xs font-mono">
+                                        <TableCell className="text-muted-foreground text-xs font-mono">
                                             {acc.aws_ssm_path || "—"}
                                         </TableCell>
                                         <TableCell>
@@ -239,7 +239,7 @@ export default function AccountsPage() {
                                                 className={
                                                     acc.is_active
                                                         ? "border-green-500/50 text-green-400"
-                                                        : "border-zinc-600 text-zinc-500"
+                                                        : "border-border text-muted-foreground"
                                                 }
                                             >
                                                 {acc.is_active ? "Active" : "Inactive"}

@@ -101,20 +101,22 @@ func RunDailyFetch(ctx context.Context, db *database.DB, ssmClient *aws.SSMClien
 			WHERE account_id = $1 AND is_active = true 
 			LIMIT 1`, id).Scan(&channel, &webhookURL, &threshold)
 
-		if err == nil && threshold > 0 && dayTotal > threshold {
-			log.Printf("ALERT! Account %s exceeded threshold (%.2f > %.2f)", accountName, dayTotal, threshold)
+		if err == nil {
+			// A. Threshold Alert
+			if threshold > 0 && dayTotal > threshold {
+				log.Printf("ALERT! Account %s exceeded threshold (%.2f > %.2f)", accountName, dayTotal, threshold)
+				msg := fmt.Sprintf("🚨 *CloudGazer Limit Exceeded* 🚨\nAccount: *%s* (%s)\n- Today's Usage: *$%.2f*\n- Daily Limit: *$%.2f*", accountName, provider, dayTotal, threshold)
+				sendAlert(channel, webhookURL, accountName, msg)
+			}
 
-			// Build Message
-			msg := fmt.Sprintf("🚨 *CloudGazer Limit Exceeded* 🚨\nAccount: *%s* (%s)\n- Today's Usage: *$%.2f*\n- Daily Limit: *$%.2f*", accountName, provider, dayTotal, threshold)
-
-			n, err := notifier.NewNotifier(channel, webhookURL)
-			if err != nil {
-				log.Printf("Failed to init notifier for %s: %v", accountName, err)
-			} else {
-				if err := n.SendAlert(msg); err != nil {
-					log.Printf("Failed to send alert for %s: %v", accountName, err)
-				} else {
-					log.Printf("Successfully sent %s alert for %s", channel, accountName)
+			// B. Anomaly Detection (> 20% of 7-day average)
+			avg7Day, err := db.Get7DayAverageCost(ctx, id)
+			if err == nil && avg7Day > 0 {
+				if dayTotal > (avg7Day * 1.2) {
+					log.Printf("ANOMALY! Account %s cost surged (%.2f vs avg %.2f)", accountName, dayTotal, avg7Day)
+					msg := fmt.Sprintf("⚠️ *CloudGazer Anomaly Detected* ⚠️\nAccount: *%s* (%s)\n- Today's Usage: *$%.2f*\n- 7-Day Average: *$%.2f*\n- Surge: *+%.1f%%*",
+						accountName, provider, dayTotal, avg7Day, ((dayTotal/avg7Day)-1)*100)
+					sendAlert(channel, webhookURL, accountName, msg)
 				}
 			}
 		}
@@ -122,4 +124,17 @@ func RunDailyFetch(ctx context.Context, db *database.DB, ssmClient *aws.SSMClien
 
 	log.Println("Daily Cost Fetch completed successfully.")
 	return nil
+}
+
+func sendAlert(channel, webhookURL, accountName, msg string) {
+	n, err := notifier.NewNotifier(channel, webhookURL)
+	if err != nil {
+		log.Printf("Failed to init notifier for %s: %v", accountName, err)
+		return
+	}
+	if err := n.SendAlert(msg); err != nil {
+		log.Printf("Failed to send alert for %s: %v", accountName, err)
+	} else {
+		log.Printf("Successfully sent %s alert for %s", channel, accountName)
+	}
 }

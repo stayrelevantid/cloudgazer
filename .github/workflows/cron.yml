@@ -1,0 +1,15 @@
+name: Daily Cost Fetch
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # Every day at 00:00 UTC
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  fetch-costs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger CloudGazer Fetch
+        run: |
+          curl -X POST "${{ secrets.API_URL }}/api/cron/fetch" \
+               -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"

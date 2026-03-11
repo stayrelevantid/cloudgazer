@@ -9,9 +9,10 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
-	awsinternal "github.com/stayrelevant-id/cloudgazer/internal/aws"
+	"github.com/stayrelevant-id/cloudgazer/internal/aws"
 	"github.com/stayrelevant-id/cloudgazer/internal/cron"
 	"github.com/stayrelevant-id/cloudgazer/internal/database"
+	"github.com/stayrelevant-id/cloudgazer/internal/janitor"
 	"github.com/stayrelevant-id/cloudgazer/internal/notifier"
 )
 
@@ -48,13 +49,15 @@ func main() {
 		awsRegion = "ap-southeast-1"
 	}
 
-	ssmClient, err := awsinternal.NewSSMClient(awsRegion)
+	ssmClient, err := aws.NewSSMClient(awsRegion)
 	if err != nil {
 		log.Printf("Failed to initialize AWS SSM client: %v", err)
 		ssmClient = nil
 	} else {
 		log.Println("Successfully initialized AWS SSM Client")
 	}
+
+	janitorSvc := janitor.NewService(db, awsRegion)
 
 	mux := http.NewServeMux()
 
@@ -412,6 +415,37 @@ func main() {
 
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"success","message":"Test notification sent"}`))
+	})
+
+	// ── JANITOR API ──────────────────────────────────────────────────────
+	mux.HandleFunc("/api/janitor", func(w http.ResponseWriter, r *http.Request) {
+		jsonHeader(w)
+
+		if r.Method == http.MethodOptions {
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		if r.Method != http.MethodGet {
+			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+			return
+		}
+
+		if db == nil {
+			http.Error(w, `{"error":"Database not configured"}`, http.StatusInternalServerError)
+			return
+		}
+
+		results, err := janitorSvc.GetIdleResources(r.Context())
+		if err != nil {
+			log.Printf("Janitor error: %v", err)
+			http.Error(w, `{"error":"Failed to fetch idle resources"}`, http.StatusInternalServerError)
+			return
+		}
+
+		fmt.Fprintf(w, `{"janitor":%s}`, toJSON(results))
 	})
 
 	port := os.Getenv("PORT")
