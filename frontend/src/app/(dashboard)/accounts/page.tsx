@@ -97,7 +97,7 @@ export default function AccountsPage() {
             } else {
                 toast.error("Failed to insert account");
             }
-        } catch (e) {
+        } catch {
             toast.error("Error saving account");
         }
     };
@@ -124,7 +124,7 @@ export default function AccountsPage() {
             } else {
                 toast.error("Failed to delete account");
             }
-        } catch (e) {
+        } catch {
             toast.error("Error deleting account");
         }
         setConfirmData(null);
@@ -208,7 +208,7 @@ export default function AccountsPage() {
                                         <div className="flex flex-col items-center gap-3 text-muted-foreground">
                                             <Cloud size={36} className="text-muted-foreground/40" />
                                             <p className="text-sm">No cloud accounts connected yet.</p>
-                                            <p className="text-xs">Click "+ Add Account" to get started.</p>
+                                            <p className="text-xs">Click &quot;+ Add Account&quot; to get started.</p>
                                         </div>
                                     </TableCell>
                                 </TableRow>

@@ -59,7 +59,7 @@ export default function DashboardPage() {
                 toast.error("Failed to sync data.");
                 setLoading(false);
             }
-        } catch (err) {
+        } catch {
             toast.error("Error connecting to backend.");
             setLoading(false);
         }

@@ -164,7 +164,7 @@ export default function AlertsPage() {
                 } else {
                     toast.error("Failed to delete alert");
                 }
-            } catch (err) {
+            } catch {
                 toast.error("Error deleting alert");
             }
         } else if (type === "test" && chan && url) {
@@ -181,7 +181,7 @@ export default function AlertsPage() {
                     const err = await res.json();
                     toast.error(`Failed to send test: ${err.error}`);
                 }
-            } catch (err) {
+            } catch {
                 toast.error("Error connecting to backend");
             } finally {
                 setTestLoading(null);
