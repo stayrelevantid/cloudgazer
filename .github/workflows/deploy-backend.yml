@@ -20,5 +20,14 @@ jobs:
           api_token: ${{ secrets.KOYEB_TOKEN }}
 
       - name: Deploy to Koyeb
-        # Ganti 'cloudgazer/backend' dengan 'APP_NAME/SERVICE_NAME' sesuai Dashboard Koyeb Anda
-        run: koyeb service redeploy cloudgazer/backend
+        run: |
+          # Perintah ini mencoba redeploy (update). 
+          # Jika service belum ada, ia akan mencoba membuat service baru.
+          koyeb service redeploy cloudgazer/backend || \
+          koyeb service create backend \
+            --app cloudgazer \
+            --git github.com/stayrelevantid/cloudgazer \
+            --git-branch main \
+            --git-workdir backend \
+            --port 8080:http \
+            --instance-type nano
