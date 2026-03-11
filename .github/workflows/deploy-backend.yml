@@ -20,4 +20,4 @@ jobs:
           api_token: ${{ secrets.KOYEB_TOKEN }}
 
       - name: Deploy to Koyeb
-        run: koyeb service redeploy cloudgazer
+        run: koyeb service redeploy cloudgazer/cloudgazer
