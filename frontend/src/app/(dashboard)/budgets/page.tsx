@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plus, Wallet, Trash2, AlertCircle, Percent } from "lucide-react";
+import { Plus, Wallet, Trash2, AlertCircle, Percent, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import {
     Table,
@@ -60,6 +60,7 @@ export default function BudgetsPage() {
 
     const [selectedAccount, setSelectedAccount] = useState("");
     const [amount, setAmount] = useState("");
+    const [editingBudget, setEditingBudget] = useState<Budget | null>(null);
 
     const fetchData = async () => {
         setLoading(true);
@@ -83,7 +84,7 @@ export default function BudgetsPage() {
         fetchData();
     }, []);
 
-    const handleCreateBudget = async () => {
+    const handleSaveBudget = async () => {
         if (!selectedAccount || !amount) {
             toast.error("Please fill all fields");
             return;
@@ -102,14 +103,22 @@ export default function BudgetsPage() {
                 setAmount("");
                 setSelectedAccount("");
                 setIsOpen(false);
+                setEditingBudget(null);
                 fetchData();
-                toast.success("Budget created successfully!");
+                toast.success(editingBudget ? "Budget updated successfully!" : "Budget saved successfully!");
             } else {
-                toast.error("Failed to create budget");
+                toast.error("Failed to save budget");
             }
         } catch {
             toast.error("Error connecting to server");
         }
+    };
+
+    const handleEditClick = (budget: Budget) => {
+        setEditingBudget(budget);
+        setSelectedAccount(budget.account_id);
+        setAmount(budget.amount.toString());
+        setIsOpen(true);
     };
 
     const handleDeleteBudget = async (id: string) => {
@@ -135,13 +144,20 @@ export default function BudgetsPage() {
                         Track monthly spending against your defined limits
                     </p>
                 </div>
-                <Dialog open={isOpen} onOpenChange={setIsOpen}>
-                    <DialogTrigger render={
+                <Dialog open={isOpen} onOpenChange={(open) => {
+                    setIsOpen(open);
+                    if (!open) {
+                        setEditingBudget(null);
+                        setSelectedAccount("");
+                        setAmount("");
+                    }
+                }}>
+                    <DialogTrigger>
                         <Button className="bg-primary hover:bg-primary/90 text-primary-foreground gap-2">
                             <Plus size={16} />
                             Set Budget
                         </Button>
-                    } />
+                    </DialogTrigger>
                     <DialogContent className="bg-card border-border text-foreground sm:max-w-[425px]">
                         <DialogHeader>
                             <DialogTitle>Set Monthly Budget</DialogTitle>
@@ -152,7 +168,11 @@ export default function BudgetsPage() {
                         <div className="grid gap-4 py-4">
                             <div className="grid gap-2">
                                 <Label htmlFor="account" className="text-muted-foreground">Cloud Account</Label>
-                                <Select value={selectedAccount} onValueChange={(val) => setSelectedAccount(val ?? "")}>
+                                <Select 
+                                    value={selectedAccount} 
+                                    onValueChange={(val) => setSelectedAccount(val ?? "")}
+                                    disabled={!!editingBudget}
+                                >
                                     <SelectTrigger id="account" className="bg-background border-border">
                                         <SelectValue placeholder="Select account" />
                                     </SelectTrigger>
@@ -178,7 +198,9 @@ export default function BudgetsPage() {
                             </div>
                         </div>
                         <DialogFooter>
-                            <Button type="button" onClick={handleCreateBudget} className="bg-primary hover:bg-primary/90 text-primary-foreground w-full">Save Budget</Button>
+                            <Button type="button" onClick={handleSaveBudget} className="bg-primary hover:bg-primary/90 text-primary-foreground w-full">
+                                {editingBudget ? "Update Budget" : "Save Budget"}
+                            </Button>
                         </DialogFooter>
                     </DialogContent>
                 </Dialog>
@@ -218,14 +240,24 @@ export default function BudgetsPage() {
                                             </div>
                                             <p className="text-sm text-muted-foreground">Monthly Spending Track</p>
                                         </div>
-                                        <Button 
-                                            variant="ghost" 
-                                            size="icon" 
-                                            className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
-                                            onClick={() => handleDeleteBudget(b.id)}
-                                        >
-                                            <Trash2 size={16} />
-                                        </Button>
+                                        <div className="flex items-center gap-1 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <Button 
+                                                variant="ghost" 
+                                                size="icon" 
+                                                className="text-muted-foreground hover:text-primary"
+                                                onClick={() => handleEditClick(b)}
+                                            >
+                                                <Pencil size={16} />
+                                            </Button>
+                                            <Button 
+                                                variant="ghost" 
+                                                size="icon" 
+                                                className="text-muted-foreground hover:text-destructive"
+                                                onClick={() => handleDeleteBudget(b.id)}
+                                            >
+                                                <Trash2 size={16} />
+                                            </Button>
+                                        </div>
                                     </div>
 
                                     <div className="space-y-4">
