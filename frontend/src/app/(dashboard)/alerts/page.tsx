@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useCurrency } from "@/contexts/CurrencyContext";
 import { Plus, BellRing, Trash2, Send, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -52,6 +53,7 @@ type AlertConfig = {
 };
 
 export default function AlertsPage() {
+    const { format, convert, symbol, currency } = useCurrency();
     const [alerts, setAlerts] = useState<AlertConfig[]>([]);
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [loading, setLoading] = useState(true);

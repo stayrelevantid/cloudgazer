@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useCurrency } from "@/contexts/CurrencyContext";
 import { Plus, Wallet, Trash2, AlertCircle, Percent, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -64,6 +65,7 @@ type Account = {
 };
 
 export default function BudgetsPage() {
+    const { format, convert, symbol, currency } = useCurrency();
     const [budgets, setBudgets] = useState<Budget[]>([]);
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [loading, setLoading] = useState(true);
@@ -307,9 +309,9 @@ export default function BudgetsPage() {
                                         <div className="flex justify-between items-end">
                                             <div className="space-y-1">
                                                 <p className="text-2xl font-bold text-foreground">
-                                                    ${b.current_spend.toFixed(2)}
+                                                    ${b.current_spend.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                                     <span className="text-sm font-normal text-muted-foreground ml-1">
-                                                        / ${b.amount.toFixed(0)}
+                                                        / ${b.amount.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                                                     </span>
                                                 </p>
                                             </div>

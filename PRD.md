@@ -31,7 +31,10 @@ Membangun platform **monitoring biaya cloud (AWS & GCP)** mandiri yang memungkin
 | **Tag/Label Filtering** | Breakdown biaya berdasarkan project (misal: `Zenith-X`, `SkyBridge`). |
 | **Account & Provider Filter** | Filter data dashboard berdasarkan akun spesifik atau provider (AWS/GCP). |
 | **Advanced DataTables** | Tabel interaktif dengan fitur Search, Pagination, dan Page Size untuk resource dan tren histori. |
-| **Currency Toggle** | Konversi tampilan biaya dari USD ke IDR. |
+| **Currency Toggle** | Konversi tampilan biaya dari USD ke IDR (Dashboard & Reports). |
+| **Cost Forecasting** | Prediksi biaya akhir bulan vs Budget visual. |
+| **Budget Management** | Progress bar visual per akun cloud. |
+| **Comparison Report** | Analisis MoM (Month-over-Month) dengan breakdown service. |
 
 ### B. Dynamic Management & Security
 
@@ -128,7 +131,11 @@ CREATE TABLE budgets (
 
 ---
 
-## 6. Future Enhancements (v1.1)
+## 6. Project Status
+- **Current Version**: v1.1.1 (Stable)
+- **Deployment**: Live on Vercel (Frontend) & Koyeb (Backend).
+- **Automation**: Daily Cron active via GitHub Actions.
+- **Key v1.1 Features**: Forecasting, Budgets, Month-over-Month Comparison, and Multi-Currency support are fully implemented.
 
 ### A. Cost Forecasting (Prediksi Biaya)
 

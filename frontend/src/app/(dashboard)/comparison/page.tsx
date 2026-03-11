@@ -13,6 +13,8 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useCurrency } from "@/contexts/CurrencyContext";
+import { CurrencyToggle } from "@/components/layout/CurrencyToggle";
 import { SimpleDataTable } from "../SimpleDataTable";
 import { 
     BarChart, 
@@ -37,6 +39,7 @@ interface ComparisonData {
 }
 
 export default function ComparisonPage() {
+    const { format, convert, symbol, exchangeRate } = useCurrency();
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState<ComparisonData[]>([]);
     const [accounts, setAccounts] = useState<{ id: string; account_name: string; provider: string }[]>([]);
@@ -94,6 +97,14 @@ export default function ComparisonPage() {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex items-center gap-4 bg-muted/30 px-3 py-1.5 rounded-full border border-border/50">
+                        <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground whitespace-nowrap">
+                            <TrendingUp size={14} className="text-primary" />
+                            <span>1 USD = Rp {exchangeRate?.toLocaleString("id-ID") ?? "15.700"}</span>
+                        </div>
+                        <div className="w-[1px] h-3 bg-border" />
+                        <CurrencyToggle />
+                    </div>
                     <Select value={selectedProvider} onValueChange={(val) => {
                         setSelectedProvider(val ?? "all");
                         setSelectedAccount("all");
@@ -138,7 +149,7 @@ export default function ComparisonPage() {
                             </div>
                         </div>
                         <div className="text-2xl font-bold text-foreground">
-                            ${totalCurrent.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            {format(totalCurrent)}
                         </div>
                         <p className="text-xs text-muted-foreground mt-1">Total spend so far this month</p>
                     </CardContent>
@@ -153,7 +164,7 @@ export default function ComparisonPage() {
                             </div>
                         </div>
                         <div className="text-2xl font-bold text-foreground">
-                            ${totalPrev.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            {format(totalPrev)}
                         </div>
                         <p className="text-xs text-muted-foreground mt-1">Total spend for the full previous month</p>
                     </CardContent>
@@ -170,7 +181,7 @@ export default function ComparisonPage() {
                         </div>
                         <div className="flex items-baseline gap-2">
                             <div className={`text-2xl font-bold ${overallDelta > 0 ? "text-destructive" : "text-emerald-400"}`}>
-                                {overallDelta >= 0 ? "+" : ""}${Math.abs(overallDelta).toFixed(2)}
+                                {overallDelta >= 0 ? "+" : "-"}{format(Math.abs(overallDelta))}
                             </div>
                             <div className={`text-sm font-semibold flex items-center ${overallDelta > 0 ? "text-destructive" : "text-emerald-400"}`}>
                                 ({overallDeltaPercent >= 0 ? "+" : ""}{overallDeltaPercent.toFixed(1)}%)
@@ -208,7 +219,7 @@ export default function ComparisonPage() {
                                     fontSize={12} 
                                     tickLine={false} 
                                     axisLine={false}
-                                    tickFormatter={(val) => `$${val}`}
+                                    tickFormatter={(val) => `${symbol}${convert(val).toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
                                 />
                                 <Tooltip 
                                     contentStyle={{ 
@@ -218,6 +229,7 @@ export default function ComparisonPage() {
                                         color: 'hsl(var(--foreground))'
                                     }}
                                     itemStyle={{ color: 'hsl(var(--foreground))' }}
+                                    formatter={(val: number) => [format(val), ""]}
                                 />
                                 <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px' }} />
                                 <Bar dataKey="current" name="This Month" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
@@ -255,19 +267,19 @@ export default function ComparisonPage() {
                                     className: "w-[35%]"
                                 },
                                 {
-                                    header: "Last Month",
+                                    header: `Last Month (${symbol})`,
                                     accessorKey: (row) => (
                                         <div className="text-muted-foreground font-mono">
-                                            ${row.prev_total.toFixed(2)}
+                                            {format(row.prev_total)}
                                         </div>
                                     ),
                                     align: "right"
                                 },
                                 {
-                                    header: "This Month",
+                                    header: `This Month (${symbol})`,
                                     accessorKey: (row) => (
                                         <div className="text-foreground font-bold font-mono">
-                                            ${row.current_total.toFixed(2)}
+                                            {format(row.current_total)}
                                         </div>
                                     ),
                                     align: "right"

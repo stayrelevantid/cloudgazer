@@ -13,6 +13,8 @@ import {
 import { Cloud, DollarSign, TrendingUp, RefreshCcw, Calendar, BarChart3, ArrowDownRight, ArrowUpRight, Layers } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { useCurrency } from "@/contexts/CurrencyContext";
+import { CurrencyToggle } from "@/components/layout/CurrencyToggle";
 import { SimpleDataTable } from "./SimpleDataTable";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -52,6 +54,7 @@ function buildChartData(rows: ReportRow[]): ChartPoint[] {
 }
 
 export default function DashboardPage() {
+    const { format, convert, symbol, exchangeRate } = useCurrency();
     const [rows, setRows] = useState<ReportRow[]>([]);
     const [comparison, setComparison] = useState<{ provider: string; current_total: number; prev_total: number }[]>([]);
     const [forecasts, setForecasts] = useState<ForecastRow[]>([]);
@@ -164,6 +167,14 @@ export default function DashboardPage() {
                          `Cloud costs for the last ${timeframe.replace('d', ' days')}`}
                     </p>
                 </div>
+                <div className="flex items-center gap-4 bg-muted/30 px-3 py-1.5 rounded-full border border-border/50">
+                    <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground whitespace-nowrap">
+                        <TrendingUp size={14} className="text-primary" />
+                        <span>1 USD = Rp {exchangeRate.toLocaleString("id-ID")}</span>
+                    </div>
+                    <div className="w-[1px] h-3 bg-border" />
+                    <CurrencyToggle />
+                </div>
                 <div className="flex items-center gap-3">
                     <Select value={selectedProvider} onValueChange={(val) => {
                         setSelectedProvider(val ?? "all");
@@ -237,7 +248,7 @@ export default function DashboardPage() {
                            timeframe === "last_year" ? `Total Cost (${new Date().getFullYear() - 1})` :
                            timeframe === "2y_ago" ? `Total Cost (${new Date().getFullYear() - 2})` :
                            timeframe === "365d" ? "This Year's Cost" : "Total Cost"}
-                    value={`$${totalAll.toFixed(2)}`}
+                    value={format(totalAll)}
                     icon={<DollarSign size={18} className="text-primary" />}
                     color="primary"
                 />
@@ -249,11 +260,11 @@ export default function DashboardPage() {
                             value={`${momChange >= 0 ? "+" : ""}${momChange.toFixed(1)}%`}
                             icon={<TrendingUp size={18} className={momChange > 0 ? "text-destructive" : "text-emerald-400"} />}
                             color={momChange > 0 ? "destructive" : "emerald"}
-                            subtitle={`vs $${prevTotalAll.toFixed(2)} last month`}
+                            subtitle={`vs ${format(prevTotalAll)} last month`}
                         />
                         <SummaryCard
                             title={`Forecasted ${new Intl.DateTimeFormat('en-US', { month: 'short' }).format(new Date())} Total`}
-                            value={`$${projectedTotalAll.toFixed(2)}`}
+                            value={format(projectedTotalAll)}
                             icon={<RefreshCcw size={18} className="text-blue-400" />}
                             color="blue"
                             subtitle="Projected end of month"
@@ -264,7 +275,7 @@ export default function DashboardPage() {
                                             {warningStatus}
                                         </Badge>
                                         <span className="text-[10px] text-muted-foreground font-semibold">
-                                            Budget: ${totalBudgetAll.toFixed(0)}
+                                            Budget: {format(totalBudgetAll)}
                                         </span>
                                     </div>
                                     <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
@@ -283,14 +294,67 @@ export default function DashboardPage() {
                     title={granularity === "day" ? (timeframe === "today" ? "Burn Status" : "Daily Burn Rate") : "Monthly Burn Rate"}
                     value={timeframe === "today" ? "Stable" : 
                         granularity === "day" 
-                        ? `$${(totalAll / (parseInt(timeframe) || 1)).toFixed(2)}` 
-                        : `$${(totalAll / 12).toFixed(2)}`
+                        ? format(totalAll / (parseInt(timeframe) || 1))
+                        : format(totalAll / 12)
                     }
                     icon={<TrendingUp size={18} className="text-orange-400" />}
                     color="orange"
                     subtitle={granularity === "day" ? "Avg per day" : "Avg per month"}
                 />
             </div>
+
+            {/* Main Chart */}
+            <Card className="bg-card border-border shadow-sm">
+                <CardHeader>
+                    <CardTitle className="text-foreground flex items-center gap-2">
+                        <TrendingUp size={18} className="text-primary" />
+                        Cost Trend ({symbol})
+                    </CardTitle>
+                    <CardDescription>Daily cost breakdown by provider</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <div className="h-[350px] w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <AreaChart data={chartData}>
+                                <defs>
+                                    <linearGradient id="colorAws" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
+                                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                                    </linearGradient>
+                                    <linearGradient id="colorGcp" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                                    </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" opacity={0.2} />
+                                <XAxis 
+                                    dataKey="date" 
+                                    stroke="#64748b" 
+                                    fontSize={12} 
+                                    tickLine={false} 
+                                    axisLine={false}
+                                    tickFormatter={(val) => new Date(val).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}
+                                />
+                                <YAxis 
+                                    stroke="#64748b" 
+                                    fontSize={12} 
+                                    tickLine={false} 
+                                    axisLine={false} 
+                                    tickFormatter={(val) => `${symbol}${convert(val).toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
+                                />
+                                <Tooltip 
+                                    contentStyle={{ backgroundColor: "#1e293b", borderColor: "#334155", borderRadius: "12px", border: "1px solid #334155" }}
+                                    itemStyle={{ fontSize: "12px", fontWeight: "bold" }}
+                                    labelStyle={{ color: "#94a3b8", marginBottom: "4px", fontSize: "11px", fontWeight: "bold", textTransform: "uppercase" }}
+                                    formatter={(val: number) => [format(val), ""]}
+                                />
+                                <Area type="monotone" dataKey="aws" name="AWS" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill="url(#colorAws)" />
+                                <Area type="monotone" dataKey="gcp" name="GCP" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorGcp)" />
+                            </AreaChart>
+                        </ResponsiveContainer>
+                    </div>
+                </CardContent>
+            </Card>
 
             {/* Bottom Section: Resource Breakdown & Historical */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -330,7 +394,7 @@ export default function DashboardPage() {
                                     header: "Cost (USD)",
                                     accessorKey: (row) => (
                                         <div className="text-right text-foreground font-mono font-semibold">
-                                            ${row.total_usd.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                            {format(row.total_usd)}
                                         </div>
                                     ),
                                     align: "right"
@@ -372,7 +436,7 @@ export default function DashboardPage() {
                                     header: "Cost (USD)",
                                     accessorKey: (row) => (
                                         <div className="text-right text-foreground font-bold font-mono">
-                                            ${row.total_usd.toFixed(2)}
+                                            {format(row.total_usd)}
                                         </div>
                                     ),
                                     align: "right"
@@ -381,6 +445,7 @@ export default function DashboardPage() {
                         />
                     </CardContent>
                 </Card>
+
             </div>
         </div>
     );

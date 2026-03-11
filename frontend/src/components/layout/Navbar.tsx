@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { Menu, LayoutDashboard, Cloud, BellRing } from "lucide-react"
+import { Menu, LayoutDashboard, Cloud, BellRing, BarChart3, Wallet, Sparkles } from "lucide-react"
 import { useEffect, useState } from "react"
 import { UserButton } from "@clerk/nextjs"
 import { usePathname } from "next/navigation"
@@ -19,8 +19,11 @@ import { cn } from "@/lib/utils"
 
 const navItems = [
     { label: "Dashboard", href: "/", icon: LayoutDashboard },
-    { label: "Accounts", href: "/accounts", icon: Cloud },
+    { label: "Comparison", href: "/comparison", icon: BarChart3 },
+    { label: "Budgets", href: "/budgets", icon: Wallet },
     { label: "Alerts", href: "/alerts", icon: BellRing },
+    { label: "Janitor", href: "/janitor", icon: Sparkles },
+    { label: "Accounts", href: "/accounts", icon: Cloud },
 ]
 
 export function Navbar() {
