@@ -14,10 +14,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Koyeb CLI
-        run: curl https://raw.githubusercontent.com/koyeb/koyeb-cli/master/install.sh | sh
+      - name: Install and configure Koyeb CLI
+        uses: koyeb-community/koyeb-actions@v2
+        with:
+          api_token: ${{ secrets.KOYEB_TOKEN }}
 
       - name: Deploy to Koyeb
-        run: |
-          koyeb login --token ${{ secrets.KOYEB_TOKEN }}
-          koyeb service redeploy cloudgazer-backend
+        run: koyeb service redeploy cloudgazer-backend
