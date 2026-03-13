@@ -89,7 +89,7 @@ CloudGazer uses **GitHub Actions** for:
 > 
 > [!IMPORTANT]
 > For Vercel deployments, ensure `frontend/vercel.json` does **not** contain the `rootDirectory` property, as this is managed via the Vercel dashboard.
-> For Koyeb deployments, a `Procfile` is provided at the root to explicitly run the Go backend.
+> For Koyeb deployments, a `Dockerfile` is provided at the root to build and run the Go backend automatically.
 
 ---
 
