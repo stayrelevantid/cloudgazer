@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -57,7 +58,7 @@ func main() {
 		log.Println("Successfully initialized AWS SSM Client")
 	}
 
-	janitorSvc := janitor.NewService(db, awsRegion)
+	janitorSvc := janitor.NewService(db, awsRegion, ssmClient)
 
 	mux := http.NewServeMux()
 
@@ -193,6 +194,42 @@ func main() {
 		http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 	})
 
+	mux.HandleFunc("/api/accounts/migrate", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if db == nil {
+			http.Error(w, "Database not configured", http.StatusInternalServerError)
+			return
+		}
+
+		var body struct {
+			AccountID  string `json:"account_id"`
+			MonthsBack int    `json:"months_back"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "Invalid request", http.StatusBadRequest)
+			return
+		}
+
+		if body.MonthsBack <= 0 || body.MonthsBack > 12 {
+			body.MonthsBack = 6
+		}
+
+		// Run in background
+		go func() {
+			ctx := context.Background()
+			err := cron.RunHistoricalSync(ctx, db, ssmClient, awsRegion, body.AccountID, body.MonthsBack)
+			if err != nil {
+				log.Printf("Historical sync failed for %s: %v", body.AccountID, err)
+			}
+		}()
+
+		w.WriteHeader(http.StatusAccepted)
+		w.Write([]byte(`{"status":"migration_started"}`))
+	})
+
 	// ── GET /api/reports ─────────────────────────────────────────────────
 	mux.HandleFunc("/api/reports", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -241,9 +278,82 @@ func main() {
 			}
 			reports = append(reports, row)
 		}
-
 		jsonHeader(w)
 		fmt.Fprintf(w, `{"reports":%s}`, toJSON(reports))
+	})
+
+	// ── GET /api/reports/services ──────────────────────────────────────────
+	mux.HandleFunc("/api/reports/services", func(w http.ResponseWriter, r *http.Request) {
+		jsonHeader(w)
+		if db == nil {
+			http.Error(w, "Database not configured", http.StatusInternalServerError)
+			return
+		}
+
+		timeRange := r.URL.Query().Get("range")
+		whereClause := ""
+		switch timeRange {
+		case "today":
+			whereClause = "cr.record_date >= CURRENT_DATE"
+		case "7d":
+			whereClause = "cr.record_date >= CURRENT_DATE - INTERVAL '6 days'"
+		case "30d":
+			whereClause = "cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)"
+		case "90d":
+			whereClause = "cr.record_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '2 months'"
+		case "180d":
+			whereClause = "cr.record_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '5 months'"
+		case "365d":
+			whereClause = "cr.record_date >= DATE_TRUNC('year', CURRENT_DATE)"
+		default:
+			whereClause = "cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)"
+		}
+
+		accountID := r.URL.Query().Get("account_id")
+		if accountID != "" {
+			whereClause += fmt.Sprintf(" AND cr.account_id = '%s'", accountID)
+		}
+		provider := r.URL.Query().Get("provider")
+		if provider != "" {
+			whereClause += fmt.Sprintf(" AND ca.provider = '%s'", provider)
+		}
+
+		rows, err := db.Pool.Query(r.Context(), fmt.Sprintf(`
+			SELECT 
+				ca.account_name,
+				ca.provider,
+				cr.service_name,
+				SUM(cr.amount_usd) as total_usd
+			FROM cost_reports cr
+			JOIN cloud_accounts ca ON ca.id = cr.account_id
+			WHERE %s
+			GROUP BY 1, 2, 3
+			ORDER BY total_usd DESC
+		`, whereClause))
+
+		if err != nil {
+			log.Printf("Service reports error: %v", err)
+			http.Error(w, "Query failed", http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+
+		type ServiceRow struct {
+			AccountName string  `json:"account_name"`
+			Provider    string  `json:"provider"`
+			ServiceName string  `json:"service_name"`
+			TotalUSD    float64 `json:"total_usd"`
+		}
+		var results []ServiceRow
+		for rows.Next() {
+			var row ServiceRow
+			if err := rows.Scan(&row.AccountName, &row.Provider, &row.ServiceName, &row.TotalUSD); err != nil {
+				log.Printf("Scan error in Services: %v", err)
+				continue
+			}
+			results = append(results, row)
+		}
+		fmt.Fprintf(w, `{"services":%s}`, toJSON(results))
 	})
 
 	// ── GET /api/reports/comparison ────────────────────────────────────────
@@ -277,7 +387,7 @@ func main() {
 			),
 			data AS (
 				SELECT 
-					cr.tag_name,
+					cr.service_name,
 					ca.provider,
 					SUM(CASE WHEN cr.record_date >= r.current_start THEN cr.amount_usd ELSE 0 END) as current_month,
 					SUM(CASE WHEN cr.record_date >= r.prev_start AND cr.record_date <= r.prev_end THEN cr.amount_usd ELSE 0 END) as prev_month
@@ -285,10 +395,10 @@ func main() {
 				JOIN cloud_accounts ca ON ca.id = cr.account_id
 				CROSS JOIN ranges r
 				WHERE cr.record_date >= r.prev_start %s
-				GROUP BY cr.tag_name, ca.provider
+				GROUP BY cr.service_name, ca.provider
 			)
 			SELECT 
-				tag_name,
+				service_name,
 				provider,
 				current_month,
 				prev_month,
@@ -422,6 +532,7 @@ func main() {
 
 		timeRange := r.URL.Query().Get("range")       // 7d, 30d, 90d, 180d, 365d
 		granularity := r.URL.Query().Get("granularity") // day, week, month
+		groupBy := r.URL.Query().Get("group_by")      // provider, account, tag
 
 		trunc := "day"
 		switch granularity {
@@ -431,31 +542,45 @@ func main() {
 			trunc = "month"
 		}
 
+		groupField := "'Total'"
+		switch groupBy {
+		case "account":
+			groupField = "ca.account_name"
+		case "service":
+			groupField = "cr.service_name"
+		case "tag":
+			groupField = "cr.tag_name"
+		case "provider":
+			groupField = "ca.provider"
+		default:
+			groupField = "'Total'"
+		}
+
 		whereClause := ""
 		switch timeRange {
 		case "today":
-			whereClause = "record_date >= CURRENT_DATE"
+			whereClause = "cr.record_date >= CURRENT_DATE"
 		case "7d": // This Week (7 days back)
-			whereClause = "record_date >= CURRENT_DATE - INTERVAL '6 days'"
+			whereClause = "cr.record_date >= CURRENT_DATE - INTERVAL '6 days'"
 		case "30d": // This Month (from 1st)
-			whereClause = "record_date >= DATE_TRUNC('month', CURRENT_DATE)"
+			whereClause = "cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)"
 		case "90d": // Last 3 Months (from 1st of 2 months ago)
-			whereClause = "record_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '2 months'"
+			whereClause = "cr.record_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '2 months'"
 		case "180d": // Last 6 Months
-			whereClause = "record_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '5 months'"
+			whereClause = "cr.record_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '5 months'"
 		case "365d": // This Year (from Jan 1)
-			whereClause = "record_date >= DATE_TRUNC('year', CURRENT_DATE)"
+			whereClause = "cr.record_date >= DATE_TRUNC('year', CURRENT_DATE)"
 		case "last_year":
-			whereClause = "record_date >= DATE_TRUNC('year', CURRENT_DATE) - INTERVAL '1 year' AND record_date < DATE_TRUNC('year', CURRENT_DATE)"
+			whereClause = "cr.record_date >= DATE_TRUNC('year', CURRENT_DATE) - INTERVAL '1 year' AND cr.record_date < DATE_TRUNC('year', CURRENT_DATE)"
 		case "2y_ago":
-			whereClause = "record_date >= DATE_TRUNC('year', CURRENT_DATE) - INTERVAL '2 years' AND record_date < DATE_TRUNC('year', CURRENT_DATE) - INTERVAL '1 year'"
+			whereClause = "cr.record_date >= DATE_TRUNC('year', CURRENT_DATE) - INTERVAL '2 years' AND cr.record_date < DATE_TRUNC('year', CURRENT_DATE) - INTERVAL '1 year'"
 		default:
-			whereClause = "record_date >= DATE_TRUNC('month', CURRENT_DATE)"
+			whereClause = "cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)"
 		}
 
 		accountID := r.URL.Query().Get("account_id")
 		if accountID != "" {
-			whereClause += fmt.Sprintf(" AND account_id = '%s'", accountID)
+			whereClause += fmt.Sprintf(" AND cr.account_id = '%s'", accountID)
 		}
 		provider := r.URL.Query().Get("provider")
 		if provider != "" {
@@ -464,15 +589,15 @@ func main() {
 
 		rows, err := db.Pool.Query(r.Context(), fmt.Sprintf(`
 			SELECT 
-				DATE_TRUNC('%s', record_date)::text as period,
-				ca.provider,
-				SUM(amount_usd) as total_usd
+				DATE_TRUNC('%s', cr.record_date)::text as period,
+				%s as group_name,
+				SUM(cr.amount_usd) as total_usd
 			FROM cost_reports cr
 			JOIN cloud_accounts ca ON ca.id = cr.account_id
 			WHERE %s
 			GROUP BY 1, 2
 			ORDER BY 1 ASC
-		`, trunc, whereClause))
+		`, trunc, groupField, whereClause))
 
 		if err != nil {
 			log.Printf("Advanced reports error: %v", err)
@@ -482,14 +607,14 @@ func main() {
 		defer rows.Close()
 
 		type AdvancedRow struct {
-			Period   string  `json:"period"`
-			Provider string  `json:"provider"`
-			TotalUSD float64 `json:"total_usd"`
+			Period    string  `json:"period"`
+			GroupName string  `json:"group_name"`
+			TotalUSD  float64 `json:"total_usd"`
 		}
 		var results []AdvancedRow
 		for rows.Next() {
 			var row AdvancedRow
-			if err := rows.Scan(&row.Period, &row.Provider, &row.TotalUSD); err == nil {
+			if err := rows.Scan(&row.Period, &row.GroupName, &row.TotalUSD); err == nil {
 				results = append(results, row)
 			}
 		}
@@ -538,20 +663,30 @@ func main() {
 		if provider != "" {
 			whereClause += fmt.Sprintf(" AND ca.provider = '%s'", provider)
 		}
+		
+		tagParam := r.URL.Query().Get("tag")
+		if tagParam != "" && tagParam != "all" {
+			whereClause += fmt.Sprintf(" AND cr.tag_name = '%s'", tagParam)
+		}
+
+		groupBy := r.URL.Query().Get("group_by")
+		
+		selectFields := "ca.account_name, ca.provider, cr.service_name, cr.resource_name, cr.tag_name, SUM(cr.amount_usd) as total_usd"
+		groupByFields := "1, 2, 3, 4, 5"
+		
+		if groupBy == "tag" {
+			selectFields = "'Multiple Accounts' as account_name, 'all' as provider, 'Multiple Services' as service_name, '[Grouped Resources]' as resource_name, cr.tag_name, SUM(cr.amount_usd) as total_usd"
+			groupByFields = "cr.tag_name"
+		}
 
 		rows, err := db.Pool.Query(r.Context(), fmt.Sprintf(`
-			SELECT 
-				ca.account_name,
-				ca.provider,
-				cr.tag_name as resource_name,
-				SUM(cr.amount_usd) as total_usd
+			SELECT %s
 			FROM cost_reports cr
 			JOIN cloud_accounts ca ON ca.id = cr.account_id
 			WHERE %s
-			GROUP BY 1, 2, 3
-			ORDER BY total_usd DESC
-			LIMIT 15
-		`, whereClause))
+			GROUP BY %s
+			ORDER BY cr.tag_name ASC, total_usd DESC
+		`, selectFields, whereClause, groupByFields))
 
 		if err != nil {
 			log.Printf("Resource reports error: %v", err)
@@ -563,15 +698,19 @@ func main() {
 		type ResourceRow struct {
 			AccountName  string  `json:"account_name"`
 			Provider     string  `json:"provider"`
+			ServiceName  string  `json:"service_name"`
 			ResourceName string  `json:"resource_name"`
+			TagName      string  `json:"tag_name"`
 			TotalUSD     float64 `json:"total_usd"`
 		}
 		var results []ResourceRow
 		for rows.Next() {
 			var row ResourceRow
-			if err := rows.Scan(&row.AccountName, &row.Provider, &row.ResourceName, &row.TotalUSD); err == nil {
-				results = append(results, row)
+			if err := rows.Scan(&row.AccountName, &row.Provider, &row.ServiceName, &row.ResourceName, &row.TagName, &row.TotalUSD); err != nil {
+				log.Printf("Scan error in Resources: %v", err)
+				continue
 			}
+			results = append(results, row)
 		}
 		fmt.Fprintf(w, `{"resources":%s}`, toJSON(results))
 	})
@@ -684,6 +823,30 @@ func main() {
 			results = append(results, row)
 		}
 		fmt.Fprintf(w, `{"historical":%s}`, toJSON(results))
+	})
+
+	mux.HandleFunc("/api/tags", func(w http.ResponseWriter, r *http.Request) {
+		jsonHeader(w)
+		if db == nil {
+			http.Error(w, `{"error":"Database not configured"}`, http.StatusInternalServerError)
+			return
+		}
+		rows, err := db.Pool.Query(r.Context(), "SELECT DISTINCT tag_name FROM cost_reports WHERE tag_name != '' ORDER BY tag_name")
+		if err != nil {
+			log.Printf("Query tags error: %v", err)
+			http.Error(w, `{"error":"Failed to query tags"}`, http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+
+		var tags []string
+		for rows.Next() {
+			var t string
+			if err := rows.Scan(&t); err == nil {
+				tags = append(tags, t)
+			}
+		}
+		fmt.Fprintf(w, `{"tags":%s}`, toJSON(tags))
 	})
 
 	// ── ALERTS API ───────────────────────────────────────────────────────
@@ -886,6 +1049,104 @@ func main() {
 		}
 
 		fmt.Fprintf(w, `{"janitor":%s}`, toJSON(results))
+	})
+
+	// ── EXPORT API ───────────────────────────────────────────────────────
+	mux.HandleFunc("/api/reports/export", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if db == nil {
+			http.Error(w, "Database not configured", http.StatusInternalServerError)
+			return
+		}
+
+		timeRange := r.URL.Query().Get("range")
+		accountID := r.URL.Query().Get("account_id")
+		provider := r.URL.Query().Get("provider")
+
+		whereClause := "1=1"
+		if accountID != "" {
+			whereClause += fmt.Sprintf(" AND cr.account_id = '%s'", accountID)
+		}
+		switch timeRange {
+		case "today":
+			whereClause = "cr.record_date >= CURRENT_DATE"
+		case "7d":
+			whereClause = "cr.record_date >= CURRENT_DATE - INTERVAL '6 days'"
+		case "30d":
+			whereClause = "cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)"
+		case "90d":
+			whereClause = "cr.record_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '2 months'"
+		case "180d":
+			whereClause = "cr.record_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '5 months'"
+		case "365d":
+			whereClause = "cr.record_date >= DATE_TRUNC('year', CURRENT_DATE)"
+		case "last_year":
+			whereClause = "cr.record_date >= DATE_TRUNC('year', CURRENT_DATE) - INTERVAL '1 year' AND cr.record_date < DATE_TRUNC('year', CURRENT_DATE)"
+		case "2y_ago":
+			whereClause = "cr.record_date >= DATE_TRUNC('year', CURRENT_DATE) - INTERVAL '2 years' AND cr.record_date < DATE_TRUNC('year', CURRENT_DATE) - INTERVAL '1 year'"
+		default:
+			whereClause = "cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)"
+		}
+
+		if provider != "" {
+			whereClause += fmt.Sprintf(" AND ca.provider = '%s'", provider)
+		}
+		
+		tagParam := r.URL.Query().Get("tag")
+		if tagParam != "" && tagParam != "all" {
+			whereClause += fmt.Sprintf(" AND cr.tag_name = '%s'", tagParam)
+		}
+
+		groupBy := r.URL.Query().Get("group_by")
+		selectFields := "cr.record_date::text, ca.account_name, ca.provider, cr.service_name, cr.resource_name, cr.tag_name, cr.amount_usd, cr.is_anomaly"
+		groupByFields := ""
+		orderBy := "cr.record_date DESC, cr.amount_usd DESC"
+
+		if groupBy == "tag" {
+			selectFields = "MAX(cr.record_date)::text, 'Multiple Accounts', 'all', 'Multiple Services', '[Grouped]', cr.tag_name, SUM(cr.amount_usd), false"
+			groupByFields = "GROUP BY cr.tag_name"
+			orderBy = "7 DESC"
+		}
+
+		rows, err := db.Pool.Query(r.Context(), fmt.Sprintf(`
+			SELECT %s
+			FROM cost_reports cr
+			JOIN cloud_accounts ca ON ca.id = cr.account_id
+			WHERE %s
+			%s
+			ORDER BY %s
+			LIMIT 10000
+		`, selectFields, whereClause, groupByFields, orderBy))
+		if err != nil {
+			log.Printf("Export query error: %v", err)
+			http.Error(w, "Failed to query export data", http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+
+		filename := "cloudgazer_export.csv"
+		if timeRange != "" {
+			filename = fmt.Sprintf("cloudgazer_export_%s.csv", timeRange)
+		}
+
+		w.Header().Set("Content-Type", "text/csv")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment;filename=%s", filename))
+
+		fmt.Fprintln(w, "Date,Account Name,Provider,Service,Resource Name,Tag (Project),Amount (USD),Is Anomaly")
+		for rows.Next() {
+			var date, account, provider, service, resource, tag string
+			var amount float64
+			var anomaly bool
+			if err := rows.Scan(&date, &account, &provider, &service, &resource, &tag, &amount, &anomaly); err != nil {
+				continue
+			}
+			// Use simple comma separation, ensuring strings with commas are quoted
+			fmt.Fprintf(w, "%s,\"%s\",%s,\"%s\",\"%s\",\"%s\",%.2f,%v\n", 
+				date, account, provider, service, resource, tag, amount, anomaly)
+		}
 	})
 
 	// ── BUDGETS API ──────────────────────────────────────────────────────

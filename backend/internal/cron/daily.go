@@ -11,13 +11,39 @@ import (
 	"github.com/stayrelevant-id/cloudgazer/internal/database"
 	"github.com/stayrelevant-id/cloudgazer/internal/fetcher"
 	"github.com/stayrelevant-id/cloudgazer/internal/notifier"
+	"os"
 )
 
 func RunDailyFetch(ctx context.Context, db *database.DB, ssmClient *aws.SSMClient, awsRegion string) error {
 	log.Println("Starting Daily Cost Fetch...")
 
-	// 1. Get all active cloud accounts
-	rows, err := db.Pool.Query(ctx, "SELECT id, provider, account_name, aws_ssm_path FROM cloud_accounts WHERE is_active = true")
+	// Default to yesterday
+	now := time.Now().UTC()
+	yesterday := now.AddDate(0, 0, -1)
+	today := now
+
+	return runSyncForRange(ctx, db, ssmClient, awsRegion, yesterday, today, "")
+}
+
+func RunHistoricalSync(ctx context.Context, db *database.DB, ssmClient *aws.SSMClient, awsRegion string, accountID string, monthsBack int) error {
+	log.Printf("Starting Historical Sync for %d months...", monthsBack)
+
+	now := time.Now().UTC()
+	// CE API allows up to 12 months.
+	start := now.AddDate(0, -monthsBack, 0)
+	// Set start to the beginning of that month
+	start = time.Date(start.Year(), start.Month(), 1, 0, 0, 0, 0, time.UTC)
+
+	return runSyncForRange(ctx, db, ssmClient, awsRegion, start, now, accountID)
+}
+
+func runSyncForRange(ctx context.Context, db *database.DB, ssmClient *aws.SSMClient, awsRegion string, start, end time.Time, filterAccountID string) error {
+	query := "SELECT id, provider, account_name, aws_ssm_path FROM cloud_accounts WHERE is_active = true"
+	if filterAccountID != "" {
+		query += fmt.Sprintf(" AND id = '%s'", filterAccountID)
+	}
+
+	rows, err := db.Pool.Query(ctx, query)
 	if err != nil {
 		return err
 	}
@@ -33,23 +59,28 @@ func RunDailyFetch(ctx context.Context, db *database.DB, ssmClient *aws.SSMClien
 			continue
 		}
 
-		log.Printf("Processing account: %s (%s)", accountName, provider)
+		log.Printf("Processing account: %s (%s) for range %s to %s", accountName, provider, start.Format("2006-01-02"), end.Format("2006-01-02"))
 
 		var records []fetcher.CostRecord
 		var err error
 
 		if strings.HasPrefix(ssmPath, "TEST_MOCK_") {
-			log.Printf("Using MOCK data for testing account %s", accountName)
-			importTime := time.Now().UTC().AddDate(0, 0, -1) // yesterday
-			todayTime := time.Now().UTC()
-			records = []fetcher.CostRecord{
-				{Service: "Amazon EC2 (Mock)", AmountUSD: 120.50, Date: importTime},
-				{Service: "Amazon S3 (Mock)", AmountUSD: 30.25, Date: importTime},
-				{Service: "Amazon EC2 (Mock)", AmountUSD: 45.10, Date: todayTime},
-				{Service: "Amazon S3 (Mock)", AmountUSD: 12.30, Date: todayTime},
+			// Generate records for every day in the range
+			for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
+				// Base randomness on date and account id
+				seed := int64(d.Unix()) + int64(id[0])
+				randVal := (float64(seed%100) / 100.0) * 10.0
+				
+				if provider == "aws" {
+					records = append(records, fetcher.CostRecord{ServiceName: "EC2 - Instances", ResourceName: "i-0987abcd1234", TagName: "Project:Alpha", AmountUSD: 15.0 + randVal, Date: d})
+					records = append(records, fetcher.CostRecord{ServiceName: "S3", ResourceName: "static-assets-cdn", TagName: "Project:Alpha", AmountUSD: 2.5 + randVal/5, Date: d})
+					records = append(records, fetcher.CostRecord{ServiceName: "RDS", ResourceName: "db-prod-cluster", TagName: "Project:Beta", AmountUSD: 30.0 + randVal*2, Date: d})
+				} else {
+					records = append(records, fetcher.CostRecord{ServiceName: "Compute Engine", ResourceName: "instance-prod-01", TagName: "Env:Prod", AmountUSD: 20.0 + randVal, Date: d})
+					records = append(records, fetcher.CostRecord{ServiceName: "Cloud Storage", ResourceName: "backups-bucket", TagName: "Env:Backup", AmountUSD: 5.0 + randVal/2, Date: d})
+				}
 			}
 		} else if provider == "aws" {
-			// For AWS, ssmPath might store the Role ARN
 			roleARN := ""
 			if ssmPath != "" && ssmClient != nil {
 				roleARN, err = ssmClient.GetSecret(ctx, ssmPath)
@@ -58,11 +89,14 @@ func RunDailyFetch(ctx context.Context, db *database.DB, ssmClient *aws.SSMClien
 					continue
 				}
 			}
-			records, err = awsF.FetchDailyCost(ctx, awsRegion, roleARN)
+			tagKey := os.Getenv("COST_TAG_KEY")
+			if tagKey == "" {
+				tagKey = "Project"
+			}
+			records, err = awsF.FetchCost(ctx, awsRegion, roleARN, tagKey, start, end)
 
 		} else if provider == "gcp" {
 			if ssmPath == "" || ssmClient == nil {
-				log.Printf("GCP requires SSM Path to Service Account JSON. Skipping %s", accountName)
 				continue
 			}
 			saJSONStr, err := ssmClient.GetSecret(ctx, ssmPath)
@@ -70,9 +104,7 @@ func RunDailyFetch(ctx context.Context, db *database.DB, ssmClient *aws.SSMClien
 				log.Printf("Failed to get GCP SA JSON from SSM for %s: %v", accountName, err)
 				continue
 			}
-
-			// Normally you'd also need the Billing Account ID. For simplicity, we could store it in accountName
-			records, err = gcpF.FetchDailyCost(ctx, []byte(saJSONStr), accountName)
+			records, err = gcpF.FetchCost(ctx, []byte(saJSONStr), accountName, start, end)
 		}
 
 		if err != nil {
@@ -83,21 +115,28 @@ func RunDailyFetch(ctx context.Context, db *database.DB, ssmClient *aws.SSMClien
 		// 3. Persist to DB (Idempotent)
 		for _, rec := range records {
 			_, err = db.Pool.Exec(ctx, `
-				INSERT INTO cost_reports (account_id, amount_usd, record_date, tag_name) 
-				VALUES ($1, $2, $3, $4)
-				ON CONFLICT (account_id, record_date, tag_name) 
-				DO UPDATE SET amount_usd = EXCLUDED.amount_usd`,
-				id, rec.AmountUSD, rec.Date, rec.Service,
-			)
+				INSERT INTO cost_reports (account_id, amount_usd, record_date, service_name, resource_name, tag_name)
+				VALUES ($1, $2, $3, $4, $5, $6)
+				ON CONFLICT (account_id, record_date, service_name, resource_name, tag_name)
+				DO UPDATE SET amount_usd = EXCLUDED.amount_usd
+			`, id, rec.AmountUSD, rec.Date.Format("2006-01-02"), rec.ServiceName, rec.ResourceName, rec.TagName)
 			if err != nil {
 				log.Printf("Failed to upsert cost record for %s: %v", accountName, err)
 			}
 		}
+
+		// Only do anomaly/budget check for daily fetches (where start is yesterday)
+		isDaily := start.After(time.Now().AddDate(0, 0, -3))
+		if !isDaily {
+			continue
+		}
+
 		// 4. Anomaly Check (Alerts)
 		var dayTotal float64
 		for _, rec := range records {
 			dayTotal += rec.AmountUSD
 		}
+		// ... (rest of alerting logic remains the same)
 
 		// check if config exists
 		var channel, webhookURL string

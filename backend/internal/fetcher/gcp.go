@@ -15,9 +15,9 @@ func NewGCPFetcher() *GCPFetcher {
 	return &GCPFetcher{}
 }
 
-// FetchDailyCost pulls GCP costs for a given billingAccountID.
+// FetchCost pulls GCP costs for a given billingAccountID.
 // It uses serviceAccountJSON provided from AWS SSM to authenticate.
-func (g *GCPFetcher) FetchDailyCost(ctx context.Context, serviceAccountJSON []byte, billingAccountID string) ([]CostRecord, error) {
+func (g *GCPFetcher) FetchCost(ctx context.Context, serviceAccountJSON []byte, billingAccountID string, start, end time.Time) ([]CostRecord, error) {
 	client, err := cloudbilling.NewService(ctx, option.WithCredentialsJSON(serviceAccountJSON))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GCP billing client: %w", err)
@@ -45,9 +45,10 @@ func (g *GCPFetcher) FetchDailyCost(ctx context.Context, serviceAccountJSON []by
 	// Because Cloud Billing Catalog / Cost API directly doesn't yield grouped cost cleanly without BigQuery
 	for _, proj := range res.ProjectBillingInfo {
 		records = append(records, CostRecord{
-			AmountUSD: 0.0, // Placeholder
-			Date:      yesterday,
-			Service:   proj.ProjectId,
+			AmountUSD:   0.0, // Placeholder
+			Date:        yesterday,
+			ServiceName: proj.ProjectId,
+			TagName:     "untagged",
 		})
 	}
 

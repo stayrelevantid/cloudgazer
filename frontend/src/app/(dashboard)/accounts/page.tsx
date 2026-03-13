@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plus, Cloud, Trash2, AlertTriangle } from "lucide-react";
+import { Plus, Cloud, Trash2, AlertTriangle, History, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import {
     Table,
@@ -54,6 +54,9 @@ export default function AccountsPage() {
 
     // Confirmation State
     const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+    const [isMigrateOpen, setIsMigrateOpen] = useState(false);
+    const [monthsBack, setMonthsBack] = useState("6");
+    const [migrating, setMigrating] = useState<string | null>(null);
     const [confirmData, setConfirmData] = useState<{
         id: string;
         account_name: string;
@@ -128,6 +131,35 @@ export default function AccountsPage() {
             toast.error("Error deleting account");
         }
         setConfirmData(null);
+    };
+
+    const handleMigrate = async () => {
+        if (!confirmData) return;
+        const { id } = confirmData;
+        setIsMigrateOpen(false);
+        setMigrating(id);
+
+        try {
+            const res = await fetch(`${API_BASE}/api/accounts/migrate`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    account_id: id,
+                    months_back: parseInt(monthsBack)
+                })
+            });
+
+            if (res.ok) {
+                toast.success("Historical migration started in background.");
+            } else {
+                toast.error("Failed to start migration");
+            }
+        } catch {
+            toast.error("Error connecting to migration API");
+        } finally {
+            setMigrating(null);
+            setConfirmData(null);
+        }
     };
 
     return (
@@ -245,8 +277,21 @@ export default function AccountsPage() {
                                                 {acc.is_active ? "Active" : "Inactive"}
                                             </Badge>
                                         </TableCell>
-                                        <TableCell className="text-right">
-                                            <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors" onClick={() => handleDeleteAccount(acc.id)}>
+                                        <TableCell className="text-right flex items-center justify-end gap-2 text-muted-foreground">
+                                            <Button 
+                                                variant="ghost" 
+                                                size="sm" 
+                                                className="h-8 gap-2 hover:bg-primary/10 hover:text-primary transition-colors"
+                                                onClick={() => {
+                                                    setConfirmData({ id: acc.id, account_name: acc.account_name });
+                                                    setIsMigrateOpen(true);
+                                                }}
+                                                disabled={migrating === acc.id}
+                                            >
+                                                {migrating === acc.id ? <Loader2 size={14} className="animate-spin" /> : <History size={14} />}
+                                                <span className="hidden sm:inline">Migrate</span>
+                                            </Button>
+                                            <Button variant="ghost" size="icon" className="h-8 w-8 hover:text-destructive hover:bg-destructive/10 transition-colors" onClick={() => handleDeleteAccount(acc.id)}>
                                                 <Trash2 size={16} />
                                             </Button>
                                         </TableCell>
@@ -288,6 +333,59 @@ export default function AccountsPage() {
                             onClick={executeAction}
                         >
                             Delete Account
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Historical Migration Dialog */}
+            <Dialog open={isMigrateOpen} onOpenChange={setIsMigrateOpen}>
+                <DialogContent className="bg-card border-border text-foreground sm:max-w-[400px] p-6">
+                    <DialogHeader className="items-center text-center">
+                        <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+                            <History className="text-primary" size={24} />
+                        </div>
+                        <DialogTitle className="text-xl">Migrate Historical Data</DialogTitle>
+                        <DialogDescription className="text-muted-foreground mt-2 text-center">
+                            Fetch past cost data for <b>{confirmData?.account_name}</b>. 
+                            This will sync your historical trends up to 12 months back.
+                        </DialogDescription>
+                    </DialogHeader>
+                    
+                    <div className="py-6 grid gap-2">
+                        <Label className="text-muted-foreground mb-1 font-medium">Duration (Months)</Label>
+                        <Select value={monthsBack} onValueChange={(val) => setMonthsBack(val ?? "6")}>
+                            <SelectTrigger className="bg-background border-border">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="bg-card border-border">
+                                <SelectItem value="1">Last Month</SelectItem>
+                                <SelectItem value="3">Last 3 Months</SelectItem>
+                                <SelectItem value="6">Last 6 Months</SelectItem>
+                                <SelectItem value="12">Last 12 Months</SelectItem>
+                            </SelectContent>
+                        </Select>
+                        <p className="text-[10px] text-muted-foreground mt-1 italic">
+                            * Historical sync may take several minutes to complete in the background.
+                        </p>
+                    </div>
+
+                    <DialogFooter className="grid grid-cols-2 gap-3">
+                        <Button
+                            variant="outline"
+                            className="border-border hover:bg-muted text-muted-foreground"
+                            onClick={() => {
+                                setIsMigrateOpen(false);
+                                setConfirmData(null);
+                            }}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            className="bg-primary hover:bg-primary/90 text-primary-foreground"
+                            onClick={handleMigrate}
+                        >
+                            Start Migration
                         </Button>
                     </DialogFooter>
                 </DialogContent>

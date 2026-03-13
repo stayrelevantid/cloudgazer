@@ -1,4 +1,4 @@
-# PRD: Project CloudGazer (v1.1.1)
+# PRD: Project CloudGazer (v1.3.0)
 
 | Field | Detail |
 |-------|--------|
@@ -50,7 +50,7 @@ Membangun platform **monitoring biaya cloud (AWS & GCP)** mandiri yang memungkin
 |-------|-----------|
 | **Threshold Alerts** | Notifikasi ke Slack/Telegram jika biaya melebihi budget harian. |
 | **Anomaly Detection** | Deteksi lonjakan biaya >20% dibandingkan rata-rata 7 hari terakhir. |
-| **Idle Resource Suggestions** | Identifikasi resource tak terpakai (Unattached EBS, Idle EIP). |
+| **Idle Resource Suggestions** | Identifikasi resource tak terpakai (Unattached EBS, Idle EIP) dengan filter langsung ke Cloud Console. |
 | **Integration Tester** | Tombol "Test Connection" untuk memvalidasi webhook notifikasi. |
 
 ---
@@ -127,17 +127,31 @@ CREATE TABLE budgets (
 | **Phase 3** | Frontend | Build Dashboard UI dengan shadcn/ui (Charts & Tables). |
 | **Phase 4** | Alerting | Implementasi Anomaly Detection dan Notification Engine. |
 | **Phase 5** | CI/CD | [DONE] Setup GitHub Actions untuk Cron Job dan auto-deploy ke Koyeb/Vercel. |
-| **Phase 6** | v1.1.1 Enhancements | [DONE] Accounting/Provider Filtering, DataTables, & Advanced Analytics. |
+| **Phase 6** | v1.2.0 Enhancements | [DONE] GCP Janitor (Disks/IPs) and CSV Data Export. |
+| **Phase 7** | Data Engineering & Analytics | [DONE] Tag-Based Grouping, Export Data (CSV/PDF), & Historical Migration. |
 
 ---
 
 ## 6. Project Status
-- **Current Version**: v1.1.1 (Stable)
+- **Current Version**: v1.3.0 (Alpha)
 - **Deployment**: Live on Vercel (Frontend) & Koyeb (Backend).
 - **Automation**: Daily Cron active via GitHub Actions.
-- **Key v1.1 Features**: Forecasting, Budgets, Month-over-Month Comparison, and Multi-Currency support are fully implemented.
+- **Key v1.1 Features**: Forecasting, Budgets, Month-over-Month Comparison, and Multi-Currency support.
+- **Key v1.2 Features**: GCP Janitor (Storage Disks & Static IPs) and CSV Data Export Analytics.
 
-### A. Cost Forecasting (Prediksi Biaya)
+- **Key v1.3 Features**: Data Engineering & Analytics (Tag-Based Grouping, Historical Migration, Enhanced Exports).
+
+### A. Tag-Based Grouping
+- Memungkinkan user melihat biaya berdasarkan Tags (contoh: Biaya untuk Project: Alpha, Environment: Production).
+- Filter baru di Dashboard untuk memilih kategori grouping.
+
+### B. Export Data
+- Fitur unduh laporan sebagai CSV atau PDF untuk keperluan pelaporan bisnis.
+- Penambahan metadata lengkap pada file ekspor.
+
+### C. Historical Migration
+- Alat untuk mengambil data biaya dari 6-12 bulan ke belakang.
+- Sinkronisasi manual atau otomatis untuk periode masa lalu guna melengkapi tren histori.
 
 - Gunakan data historis untuk memprediksi **estimasi biaya akhir bulan** dengan metode *linear regression* sederhana.
 - Tampilkan grafik **"Projected Spend vs Budget"** di dashboard utama.

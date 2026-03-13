@@ -1,4 +1,4 @@
-# ☁️ CloudGazer (v1.1.1)
+# ☁️ CloudGazer (v1.3.0)
 
 **CloudGazer** is a self-hosted multi-cloud cost monitoring platform designed to help you track daily spend across AWS and GCP while maintaining **Rp 0 operating costs** using free-tier infrastructure.
 
@@ -9,10 +9,12 @@
 ### 📊 Dashboard & Monitoring
 - **Multi-Cloud Overview**: Visualize combined AWS and GCP costs in a unified area chart.
 - **Granular Filtering**: Filter dashboard data by specific cloud accounts or providers (AWS/GCP).
-- **DataTable Analytics**: Interractive tables for "Top Resources" and "Historical Trend" with Search, Pagination, and Page Size controls.
+- **DataTable Analytics**: Interactive tables for "Top Resources" and "Historical Trend" with Search, Pagination, and Page Size controls.
 - **Advanced Reports**: Supports calendar-aligned timeframes (Today, This Week, This Month, This Year, Last Year, 2 Years Ago).
 - **Daily Fetcher**: Automated synchronization of cost data at `00:00 UTC` for maximum efficiency.
 - **Currency Toggle**: Easily switch between USD and IDR display.
+- **Data Export**: Export your cost reports and resource analytics to CSV or PDF format.
+- **Advanced Tags**: Group and filter costs by cloud resource tags (Project, Env).
 
 ### 🛡️ Security & Management
 - **Dynamic Account Integration**: Add/remove AWS accounts (via Role ARN) and GCP accounts (via Service Account JSON) dynamically.
@@ -24,7 +26,7 @@
 - **Budget Planning**: Set monthly budgets per account with visual progress tracking.
 - **Cost Forecasting**: Predictive spend analysis based on historical trends (linear regression).
 - **Anomaly Detection**: Automatic alerts if today's cost surges **>20%** compared to the 7-day average.
-- **Janitor (Idle Resources)**: Identify and clean up unattached EBS volumes and unassociated Elastic IPs (AWS).
+- **Janitor (Multi-Cloud)**: Identify unattached volumes and unassociated IPs with direct "Manage in Console" redirects for AWS and GCP.
 - **Integration Tester**: "Test Connection" button to validate webhook configurations instantly.
 
 ---
@@ -34,7 +36,7 @@
 | Layer | Technology | Provider |
 | :--- | :--- | :--- |
 | **Frontend** | Next.js 15, Tailwind CSS, shadcn/ui | Vercel |
-| **Backend** | Go (Golang) 1.22+ | Koyeb / Render |
+| **Backend** | Go (Golang) 1.25+ | Koyeb / Render |
 | **Database** | PostgreSQL | Neon.tech |
 | **Secrets** | AWS SSM Parameter Store | AWS (Standard Tier) |
 | **Auth** | Clerk | Clerk (Free Tier) |
@@ -97,6 +99,8 @@ CloudGazer uses **GitHub Actions** for:
 - [x] **Phase 4**: Alerting & Janitor (Anomalies, Idle Resources)
 - [x] **Phase 5**: CI/CD (GitHub Actions)
 - [x] **v1.1.1**: Analytics filtering, DataTables, Forecasting, & Budgets
+- [x] **Phase 6**: GCP Janitor & Data Export Analytics (v1.2.0)
+- [x] **Phase 7**: Data Engineering & Analytics (v1.3.0)
 
 ---
 

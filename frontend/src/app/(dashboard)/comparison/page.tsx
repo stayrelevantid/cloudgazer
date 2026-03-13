@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { 
     BarChart3, 
     ArrowUpRight, 
@@ -46,7 +46,7 @@ export default function ComparisonPage() {
     const [selectedAccount, setSelectedAccount] = useState<string>("all");
     const [selectedProvider, setSelectedProvider] = useState<string>("all");
 
-    const fetchData = async () => {
+    const fetchData = useCallback(async () => {
         setLoading(true);
         try {
             const params = new URLSearchParams();
@@ -61,7 +61,7 @@ export default function ComparisonPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }, [selectedAccount, selectedProvider]);
 
     useEffect(() => {
         fetch(`${API_BASE}/api/accounts`)
@@ -72,7 +72,7 @@ export default function ComparisonPage() {
 
     useEffect(() => {
         fetchData();
-    }, [selectedAccount, selectedProvider]);
+    }, [fetchData]);
 
     const totalCurrent = data.reduce((acc, curr) => acc + curr.current_total, 0);
     const totalPrev = data.reduce((acc, curr) => acc + curr.prev_total, 0);
@@ -121,7 +121,9 @@ export default function ComparisonPage() {
 
                     <Select value={selectedAccount} onValueChange={(val) => setSelectedAccount(val ?? "all")}>
                         <SelectTrigger className="w-[180px] bg-card border-border">
-                            <SelectValue placeholder="All Accounts" />
+                            <SelectValue>
+                                {selectedAccount === "all" ? "All Accounts" : accounts.find(a => a.id === selectedAccount)?.account_name}
+                            </SelectValue>
                         </SelectTrigger>
                         <SelectContent className="bg-card border-border">
                             <SelectItem value="all">All Accounts</SelectItem>
@@ -232,8 +234,8 @@ export default function ComparisonPage() {
                                     formatter={(val: number) => [format(val), ""]}
                                 />
                                 <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px' }} />
-                                <Bar dataKey="current" name="This Month" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
-                                <Bar dataKey="previous" name="Last Month" fill="hsl(var(--muted))" radius={[4, 4, 0, 0]} />
+                                <Bar dataKey="current" name="This Month" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                                <Bar dataKey="previous" name="Last Month" fill="#cbd5e1" radius={[4, 4, 0, 0]} />
                             </BarChart>
                         </ResponsiveContainer>
                     </CardContent>
