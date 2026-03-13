@@ -153,36 +153,38 @@ export function SimpleDataTable<T>({
                 </Table>
             </div>
 
-            {totalPages > 1 && (
-                <div className="flex items-center justify-between px-2">
-                    <div className="text-sm text-muted-foreground">
+            {filteredData.length > 0 && (
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-2 py-1">
+                    <div className="text-sm text-muted-foreground order-2 sm:order-1">
                         Showing {Math.min(filteredData.length, (currentPage - 1) * pageSize + 1)} to{" "}
                         {Math.min(filteredData.length, currentPage * pageSize)} of{" "}
                         {filteredData.length} entries
                     </div>
-                    <div className="flex items-center gap-2">
-                        <Button
-                            variant="outline"
-                            size="icon"
-                            className="h-8 w-8 border-border"
-                            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                            disabled={currentPage === 1}
-                        >
-                            <ChevronLeft className="w-4 h-4" />
-                        </Button>
-                        <div className="text-sm font-medium">
-                            Page {currentPage} of {totalPages}
+                    {totalPages > 1 && (
+                        <div className="flex items-center gap-2 order-1 sm:order-2">
+                            <Button
+                                variant="outline"
+                                size="icon"
+                                className="h-8 w-8 border-border"
+                                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                                disabled={currentPage === 1}
+                            >
+                                <ChevronLeft className="w-4 h-4" />
+                            </Button>
+                            <div className="text-sm font-medium px-2">
+                                Page {currentPage} of {totalPages}
+                            </div>
+                            <Button
+                                variant="outline"
+                                size="icon"
+                                className="h-8 w-8 border-border"
+                                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                                disabled={currentPage === totalPages}
+                            >
+                                <ChevronRight className="w-4 h-4" />
+                            </Button>
                         </div>
-                        <Button
-                            variant="outline"
-                            size="icon"
-                            className="h-8 w-8 border-border"
-                            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                            disabled={currentPage === totalPages}
-                        >
-                            <ChevronRight className="w-4 h-4" />
-                        </Button>
-                    </div>
+                    )}
                 </div>
             )}
         </div>

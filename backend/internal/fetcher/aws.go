@@ -3,6 +3,7 @@ package fetcher
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -13,11 +14,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
 
-// CostRecord represents a simplified daily cost grouped by service/tag
+// CostRecord represents a simplified daily cost grouped by service and tag
 type CostRecord struct {
-	AmountUSD float64
-	Date      time.Time
-	Service   string // Used for tag_name in DB
+	ServiceName  string
+	ResourceName string // New field
+	TagName      string
+	AmountUSD    float64
+	Date         time.Time
 }
 
 type AWSFetcher struct{}
@@ -26,9 +29,9 @@ func NewAWSFetcher() *AWSFetcher {
 	return &AWSFetcher{}
 }
 
-// FetchDailyCost pulls the cost from exactly yesterday grouped by SERVICE.
+// FetchCost pulls the cost from a date range grouped by SERVICE (and optionally TAG).
 // If roleARN is not empty, it assumes that role first.
-func (f *AWSFetcher) FetchDailyCost(ctx context.Context, region, roleARN string) ([]CostRecord, error) {
+func (f *AWSFetcher) FetchCost(ctx context.Context, region, roleARN, tagKey string, start, end time.Time) ([]CostRecord, error) {
 	// Load default config (based on environment / SSM logic)
 	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
 	if err != nil {
@@ -44,12 +47,8 @@ func (f *AWSFetcher) FetchDailyCost(ctx context.Context, region, roleARN string)
 
 	ceClient := costexplorer.NewFromConfig(cfg)
 
-	// In CE API, End date is exclusive, Start date is inclusive.
-	// We want precisely yesterday's data. Wait until the next day to measure full yesterday.
-	now := time.Now().UTC()
-	yesterday := now.AddDate(0, 0, -1)
-	startStr := yesterday.Format("2006-01-02")
-	endStr := now.Format("2006-01-02")
+	startStr := start.Format("2006-01-02")
+	endStr := end.Format("2006-01-02")
 
 	input := &costexplorer.GetCostAndUsageInput{
 		TimePeriod: &ceTypes.DateInterval{
@@ -64,6 +63,13 @@ func (f *AWSFetcher) FetchDailyCost(ctx context.Context, region, roleARN string)
 				Key:  aws.String("SERVICE"),
 			},
 		},
+	}
+
+	if tagKey != "" {
+		input.GroupBy = append(input.GroupBy, ceTypes.GroupDefinition{
+			Type: ceTypes.GroupDefinitionTypeTag,
+			Key:  aws.String(tagKey),
+		})
 	}
 
 	out, err := ceClient.GetCostAndUsage(ctx, input)
@@ -82,7 +88,18 @@ func (f *AWSFetcher) FetchDailyCost(ctx context.Context, region, roleARN string)
 			if len(group.Keys) == 0 {
 				continue
 			}
+			
 			serviceName := group.Keys[0]
+			tagName := "untagged"
+			if len(group.Keys) > 1 {
+				tagName = group.Keys[1]
+				// AWS tags often come back as "Key$Value" or just "Value" depending on version, 
+				// but in Filter/GroupBy it's usually just the value.
+				if strings.Contains(tagName, "$") {
+					parts := strings.SplitN(tagName, "$", 2)
+					tagName = parts[1]
+				}
+			}
 
 			valStr := "0"
 			if metric, ok := group.Metrics["UnblendedCost"]; ok && metric.Amount != nil {
@@ -93,9 +110,11 @@ func (f *AWSFetcher) FetchDailyCost(ctx context.Context, region, roleARN string)
 			fmt.Sscanf(valStr, "%f", &amount)
 
 			records = append(records, CostRecord{
-				Date:      recordDate,
-				Service:   serviceName,
-				AmountUSD: amount,
+				Date:         recordDate,
+				ServiceName:  serviceName,
+				ResourceName: serviceName, // Default to service name for now
+				TagName:      tagName,
+				AmountUSD:    amount,
 			})
 		}
 	}

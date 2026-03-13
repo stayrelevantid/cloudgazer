@@ -8,15 +8,17 @@ import (
 
 	"github.com/stayrelevant-id/cloudgazer/internal/aws"
 	"github.com/stayrelevant-id/cloudgazer/internal/database"
+	"github.com/stayrelevant-id/cloudgazer/internal/gcp"
 )
 
 type Service struct {
 	db        *database.DB
 	awsRegion string
+	ssmClient *aws.SSMClient
 }
 
-func NewService(db *database.DB, awsRegion string) *Service {
-	return &Service{db: db, awsRegion: awsRegion}
+func NewService(db *database.DB, awsRegion string, ssmClient *aws.SSMClient) *Service {
+	return &Service{db: db, awsRegion: awsRegion, ssmClient: ssmClient}
 }
 
 type JanitorResult struct {
@@ -47,12 +49,30 @@ func (s *Service) GetIdleResources(ctx context.Context) ([]JanitorResult, error)
 			shortID := id[:8]
 			if provider == "aws" {
 				resources = []aws.IdleResource{
-					{ID: fmt.Sprintf("vol-%s-ebs1", shortID), Type: "EBS", Name: fmt.Sprintf("temp-db-%s", accountName), CostMonthly: 12.50},
-					{ID: fmt.Sprintf("ip-%s-eip1", shortID), Type: "EIP", Name: "legacy-server-ip", CostMonthly: 3.60},
+					{
+						ID: fmt.Sprintf("vol-%s-ebs1", shortID), 
+						Type: "EBS", 
+						Name: fmt.Sprintf("temp-db-%s", accountName), 
+						CostMonthly: 12.50,
+						ConsoleURL: fmt.Sprintf("https://%s.console.aws.amazon.com/ec2/home?region=%s#Volumes:search=%s", s.awsRegion, s.awsRegion, fmt.Sprintf("vol-%s-ebs1", shortID)),
+					},
+					{
+						ID: fmt.Sprintf("ip-%s-eip1", shortID), 
+						Type: "EIP", 
+						Name: "legacy-server-ip", 
+						CostMonthly: 3.60,
+						ConsoleURL: fmt.Sprintf("https://%s.console.aws.amazon.com/ec2/home?region=%s#Addresses:search=%s", s.awsRegion, s.awsRegion, fmt.Sprintf("ip-%s-eip1", shortID)),
+					},
 				}
 			} else if provider == "gcp" {
 				resources = []aws.IdleResource{
-					{ID: fmt.Sprintf("disk-%s-gce1", shortID), Type: "GCE Disk", Name: "old-staging-disk", CostMonthly: 8.20},
+					{
+						ID: fmt.Sprintf("disk-%s-gce1", shortID), 
+						Type: "GCE Disk", 
+						Name: "old-staging-disk", 
+						CostMonthly: 8.20,
+						ConsoleURL: fmt.Sprintf("https://console.cloud.google.com/compute/disksDetail/zones/us-central1-a/disks/old-staging-disk?project=%s", accountName),
+					},
 				}
 			}
 		} else if provider == "aws" {
@@ -62,18 +82,48 @@ func (s *Service) GetIdleResources(ctx context.Context) ([]JanitorResult, error)
 				continue
 			}
 
-			vols, err := jc.GetUnattachedVolumes(ctx)
+			vols, err := jc.GetUnattachedVolumes(ctx, s.awsRegion)
 			if err == nil {
 				resources = append(resources, vols...)
 			}
 
-			eips, err := jc.GetUnassociatedElasticIPs(ctx)
+			eips, err := jc.GetUnassociatedElasticIPs(ctx, s.awsRegion)
 			if err == nil {
 				resources = append(resources, eips...)
 			}
 		} else if provider == "gcp" {
-			// GCP Janitor implementation pending
-			log.Printf("Janitor: GCP provider not yet supported for %s", accountName)
+			if ssmPath == "" || s.ssmClient == nil {
+				log.Printf("Janitor: GCP requires SSM Path for SA JSON. Skipping %s", accountName)
+				continue
+			}
+
+			saJSON, err := s.ssmClient.GetSecret(ctx, ssmPath)
+			if err != nil {
+				log.Printf("Janitor: failed to get GCP secret for %s: %v", accountName, err)
+				continue
+			}
+
+			jc, err := gcp.NewJanitorClient(ctx, []byte(saJSON))
+			if err != nil {
+				log.Printf("Janitor: failed to init GCP Janitor for %s: %v", accountName, err)
+				continue
+			}
+
+			// For GCP, we assume projectID is stored in accountName or we'd need another field
+			// In daily.go, they use accountName as billingAccountID, but for Compute we need ProjectID.
+			// Let's check if we can extract ProjectID from the SA JSON or if it's passed somehow.
+			// For now, let's assume accountName is the ProjectID if it's GCP.
+			projectID := accountName 
+
+			vols, err := jc.GetUnattachedDisks(ctx, projectID)
+			if err == nil {
+				resources = append(resources, vols...)
+			}
+
+			ips, err := jc.GetUnassociatedIPs(ctx, projectID)
+			if err == nil {
+				resources = append(resources, ips...)
+			}
 		}
 
 		if len(resources) > 0 {

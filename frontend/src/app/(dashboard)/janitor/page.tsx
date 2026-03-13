@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Trash2, ShieldAlert, Cpu, Globe, RefreshCcw } from "lucide-react";
+import { Trash2, ShieldAlert, Cpu, Globe, RefreshCcw, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import {
     Table,
@@ -35,6 +35,7 @@ type Resource = {
     name: string;
     launch_time?: string;
     cost_monthly?: number;
+    console_url?: string;
 };
 
 type JanitorResult = {
@@ -154,7 +155,11 @@ export default function JanitorPage() {
                                             <TableRow key={item.id} className="border-border hover:bg-muted/50 transition-colors">
                                                 <TableCell className="w-24">
                                                     <div className="flex items-center gap-2 text-foreground font-medium">
-                                                        {item.type === "EBS" ? <Cpu size={16} className="text-orange-400" /> : <Globe size={16} className="text-blue-400" />}
+                                                        {(item.type === "EBS" || item.type === "GCE Disk") ? (
+                                                            <Cpu size={16} className={item.type === "EBS" ? "text-orange-400" : "text-blue-400"} />
+                                                        ) : (
+                                                            <Globe size={16} className={item.type === "EIP" ? "text-blue-400" : "text-emerald-400"} />
+                                                        )}
                                                         {item.type}
                                                     </div>
                                                 </TableCell>
@@ -170,34 +175,21 @@ export default function JanitorPage() {
                                                     </Badge>
                                                 </TableCell>
                                                 <TableCell className="text-right">
-                                                    <AlertDialog>
-                                                        <AlertDialogTrigger 
-                                                            render={
-                                                                <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive gap-1">
-                                                                    <Trash2 size={14} />
-                                                                    Release / Delete
-                                                                </Button>
+                                                    <Button 
+                                                        variant="ghost" 
+                                                        size="sm" 
+                                                        className="text-primary hover:bg-primary/10 hover:text-primary gap-1"
+                                                        onClick={() => {
+                                                            if (item.console_url) {
+                                                                window.open(item.console_url, "_blank");
+                                                            } else {
+                                                                toast.info("Console URL not available for this resource");
                                                             }
-                                                        />
-                                                        <AlertDialogContent className="bg-card border-border">
-                                                            <AlertDialogHeader>
-                                                                <AlertDialogTitle className="text-foreground">Are you absolutely sure?</AlertDialogTitle>
-                                                                <AlertDialogDescription className="text-muted-foreground">
-                                                                    This action will permanently delete the resource <b>{item.id}</b> ({item.type}). 
-                                                                    This action cannot be undone.
-                                                                </AlertDialogDescription>
-                                                            </AlertDialogHeader>
-                                                            <AlertDialogFooter>
-                                                                <AlertDialogCancel className="border-border text-muted-foreground">Cancel</AlertDialogCancel>
-                                                                <AlertDialogAction 
-                                                                    onClick={() => handleRelease(item.id)}
-                                                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                                                >
-                                                                    Confirm Delete
-                                                                </AlertDialogAction>
-                                                            </AlertDialogFooter>
-                                                        </AlertDialogContent>
-                                                    </AlertDialog>
+                                                        }}
+                                                    >
+                                                        <ExternalLink size={14} />
+                                                        Manage in Console
+                                                    </Button>
                                                 </TableCell>
                                             </TableRow>
                                         ))}

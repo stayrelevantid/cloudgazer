@@ -31,9 +31,10 @@ type IdleResource struct {
 	Name        string  `json:"name"`
 	LaunchTime  string  `json:"launch_time,omitempty"`
 	CostMonthly float64 `json:"cost_monthly,omitempty"`
+	ConsoleURL  string  `json:"console_url,omitempty"`
 }
 
-func (j *JanitorClient) GetUnattachedVolumes(ctx context.Context) ([]IdleResource, error) {
+func (j *JanitorClient) GetUnattachedVolumes(ctx context.Context, region string) ([]IdleResource, error) {
 	input := &ec2.DescribeVolumesInput{
 		Filters: []types.Filter{
 			{
@@ -58,15 +59,16 @@ func (j *JanitorClient) GetUnattachedVolumes(ctx context.Context) ([]IdleResourc
 			}
 		}
 		idle = append(idle, IdleResource{
-			ID:   *vol.VolumeId,
-			Type: "EBS",
-			Name: name,
+			ID:         *vol.VolumeId,
+			Type:       "EBS",
+			Name:       name,
+			ConsoleURL: fmt.Sprintf("https://%s.console.aws.amazon.com/ec2/home?region=%s#Volumes:search=%s", region, region, *vol.VolumeId),
 		})
 	}
 	return idle, nil
 }
 
-func (j *JanitorClient) GetUnassociatedElasticIPs(ctx context.Context) ([]IdleResource, error) {
+func (j *JanitorClient) GetUnassociatedElasticIPs(ctx context.Context, region string) ([]IdleResource, error) {
 	input := &ec2.DescribeAddressesInput{}
 	result, err := j.client.DescribeAddresses(ctx, input)
 	if err != nil {
@@ -84,9 +86,10 @@ func (j *JanitorClient) GetUnassociatedElasticIPs(ctx context.Context) ([]IdleRe
 				}
 			}
 			idle = append(idle, IdleResource{
-				ID:   *addr.PublicIp,
-				Type: "EIP",
-				Name: name,
+				ID:         *addr.PublicIp,
+				Type:       "EIP",
+				Name:       name,
+				ConsoleURL: fmt.Sprintf("https://%s.console.aws.amazon.com/ec2/home?region=%s#Addresses:search=%s", region, region, *addr.PublicIp),
 			})
 		}
 	}
