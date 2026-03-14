@@ -1,6 +1,6 @@
 module github.com/stayrelevant-id/cloudgazer
 
-go 1.24.0
+go 1.26.0
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.41.3
@@ -12,7 +12,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.41.8
 	github.com/jackc/pgx/v5 v5.8.0
 	github.com/joho/godotenv v1.5.1
-	google.golang.org/api v0.220.0
+	google.golang.org/api v0.264.0
 )
 
 require (
