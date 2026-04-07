@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { useAuth } from "@clerk/nextjs";
 import { API_BASE } from "@/lib/config";
 import { Trash2, ShieldAlert, Cpu, Globe, RefreshCcw, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
@@ -15,18 +16,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
-
-import {
-    AlertDialog,
-    AlertDialogAction,
-    AlertDialogCancel,
-    AlertDialogContent,
-    AlertDialogDescription,
-    AlertDialogFooter,
-    AlertDialogHeader,
-    AlertDialogTitle,
-    AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
 
 
 type Resource = {
@@ -45,13 +34,17 @@ type JanitorResult = {
 };
 
 export default function JanitorPage() {
+    const { getToken } = useAuth();
     const [results, setResults] = useState<JanitorResult[]>([]);
     const [loading, setLoading] = useState(true);
 
-    const fetchData = async () => {
+    const fetchData = useCallback(async () => {
         setLoading(true);
         try {
-            const res = await fetch(`${API_BASE}/api/janitor`);
+            const token = await getToken();
+            const res = await fetch(`${API_BASE}/api/janitor`, {
+                headers: { "Authorization": `Bearer ${token}` }
+            });
             const data = await res.json();
             setResults(data.janitor ?? []);
         } catch (err) {
@@ -60,21 +53,11 @@ export default function JanitorPage() {
         } finally {
             setLoading(false);
         }
-    };
-
-    const handleRelease = (id: string) => {
-        // Mock release action
-        toast.success(`Resource ${id} scheduled for deletion`);
-        // Remove from local state for better UX
-        setResults(prev => prev.map(acc => ({
-            ...acc,
-            resources: acc.resources.filter(r => r.id !== id)
-        })).filter(acc => acc.resources.length > 0));
-    };
+    }, [getToken]);
 
     useEffect(() => {
         fetchData();
-    }, []);
+    }, [fetchData]);
 
     const totalResources = results.reduce((acc, curr) => acc + curr.resources.length, 0);
 

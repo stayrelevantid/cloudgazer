@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
+import { useAuth } from "@clerk/nextjs";
 import { API_BASE } from "@/lib/config";
 import { 
     BarChart3, 
@@ -39,36 +40,40 @@ interface ComparisonData {
 }
 
 export default function ComparisonPage() {
+    const { getToken } = useAuth();
     const { format, convert, symbol, exchangeRate } = useCurrency();
-    const [loading, setLoading] = useState(true);
     const [data, setData] = useState<ComparisonData[]>([]);
     const [accounts, setAccounts] = useState<{ id: string; account_name: string; provider: string }[]>([]);
     const [selectedAccount, setSelectedAccount] = useState<string>("all");
     const [selectedProvider, setSelectedProvider] = useState<string>("all");
 
     const fetchData = useCallback(async () => {
-        setLoading(true);
         try {
+            const token = await getToken();
+            const headers = { "Authorization": `Bearer ${token}` };
             const params = new URLSearchParams();
             if (selectedAccount !== "all") params.append("account_id", selectedAccount);
             if (selectedProvider !== "all") params.append("provider", selectedProvider);
 
-            const res = await fetch(`${API_BASE}/api/reports/comparison?${params.toString()}`);
+            const res = await fetch(`${API_BASE}/api/reports/comparison?${params.toString()}`, { headers });
             const json = await res.json();
             setData(json.comparison ?? []);
         } catch (error) {
             console.error("Failed to fetch comparison:", error);
-        } finally {
-            setLoading(false);
         }
-    }, [selectedAccount, selectedProvider]);
+    }, [selectedAccount, selectedProvider, getToken]);
 
     useEffect(() => {
-        fetch(`${API_BASE}/api/accounts`)
-            .then(r => r.json())
-            .then(d => setAccounts(d.accounts ?? []))
-            .catch(() => setAccounts([]));
-    }, []);
+        const loadAccounts = async () => {
+            const token = await getToken();
+            const headers = { "Authorization": `Bearer ${token}` };
+            fetch(`${API_BASE}/api/accounts`, { headers })
+                .then(r => r.json())
+                .then(d => setAccounts(d.accounts ?? []))
+                .catch(() => setAccounts([]));
+        };
+        loadAccounts();
+    }, [getToken]);
 
     useEffect(() => {
         fetchData();

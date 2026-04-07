@@ -1,18 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { useAuth } from "@clerk/nextjs";
 import { API_BASE } from "@/lib/config";
 import { useCurrency } from "@/contexts/CurrencyContext";
 import { Plus, Wallet, Trash2, AlertCircle, Percent, Pencil } from "lucide-react";
 import { toast } from "sonner";
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -65,7 +58,8 @@ type Account = {
 };
 
 export default function BudgetsPage() {
-    const { format, convert, symbol, currency } = useCurrency();
+    const { getToken } = useAuth();
+    const { symbol } = useCurrency();
     const [budgets, setBudgets] = useState<Budget[]>([]);
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [loading, setLoading] = useState(true);
@@ -80,12 +74,14 @@ export default function BudgetsPage() {
     const [amount, setAmount] = useState("");
     const [editingBudget, setEditingBudget] = useState<Budget | null>(null);
 
-    const fetchData = async () => {
+    const fetchData = useCallback(async () => {
         setLoading(true);
         try {
+            const token = await getToken();
+            const headers = { "Authorization": `Bearer ${token}` };
             const [bRes, aRes] = await Promise.all([
-                fetch(`${API_BASE}/api/budgets`),
-                fetch(`${API_BASE}/api/accounts`)
+                fetch(`${API_BASE}/api/budgets`, { headers }),
+                fetch(`${API_BASE}/api/accounts`, { headers })
             ]);
             const bData = await bRes.json();
             const aData = await aRes.json();
@@ -96,11 +92,11 @@ export default function BudgetsPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }, [getToken]);
 
     useEffect(() => {
         fetchData();
-    }, []);
+    }, [fetchData]);
 
     const handleSaveBudget = async () => {
         if (!selectedAccount || !amount) {
@@ -108,9 +104,13 @@ export default function BudgetsPage() {
             return;
         }
         try {
+            const token = await getToken();
             const res = await fetch(`${API_BASE}/api/budgets`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: { 
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${token}`
+                },
                 body: JSON.stringify({
                     account_id: selectedAccount,
                     amount: parseFloat(amount)
@@ -141,7 +141,11 @@ export default function BudgetsPage() {
 
     const handleDeleteBudget = async (id: string) => {
         try {
-            const res = await fetch(`${API_BASE}/api/budgets?id=${id}`, { method: "DELETE" });
+            const token = await getToken();
+            const res = await fetch(`${API_BASE}/api/budgets?id=${id}`, { 
+                method: "DELETE",
+                headers: { "Authorization": `Bearer ${token}` }
+            });
             if (res.ok) {
                 fetchData();
                 toast.success("Budget removed");

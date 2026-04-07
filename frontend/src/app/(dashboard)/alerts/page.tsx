@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { useAuth } from "@clerk/nextjs";
 import { API_BASE } from "@/lib/config";
-import { useCurrency } from "@/contexts/CurrencyContext";
 import { Plus, BellRing, Trash2, Send, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -53,7 +53,7 @@ type AlertConfig = {
 };
 
 export default function AlertsPage() {
-    const { format, convert, symbol, currency } = useCurrency();
+    const { getToken } = useAuth();
     const [alerts, setAlerts] = useState<AlertConfig[]>([]);
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [loading, setLoading] = useState(true);
@@ -76,12 +76,14 @@ export default function AlertsPage() {
         account_name?: string;
     } | null>(null);
 
-    const fetchData = async () => {
+    const fetchData = useCallback(async () => {
         setLoading(true);
         try {
+            const token = await getToken();
+            const headers = { "Authorization": `Bearer ${token}` };
             const [alRes, acRes] = await Promise.all([
-                fetch(`${API_BASE}/api/alerts`),
-                fetch(`${API_BASE}/api/accounts`),
+                fetch(`${API_BASE}/api/alerts`, { headers }),
+                fetch(`${API_BASE}/api/accounts`, { headers }),
             ]);
             const alData = await alRes.json();
             const acData = await acRes.json();
@@ -92,11 +94,11 @@ export default function AlertsPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }, [getToken]);
 
     useEffect(() => {
         fetchData();
-    }, []);
+    }, [fetchData]);
 
     const handleSaveAlert = async () => {
         if (!selectedAccount || !channel || !threshold || !webhookUrl) {
@@ -105,9 +107,13 @@ export default function AlertsPage() {
         }
 
         try {
+            const token = await getToken();
             const res = await fetch(`${API_BASE}/api/alerts`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: { 
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${token}`
+                },
                 body: JSON.stringify({
                     account_id: selectedAccount,
                     channel,
@@ -159,7 +165,11 @@ export default function AlertsPage() {
 
         if (type === "delete" && id) {
             try {
-                const res = await fetch(`${API_BASE}/api/alerts?account_id=${id}`, { method: "DELETE" });
+                const token = await getToken();
+                const res = await fetch(`${API_BASE}/api/alerts?account_id=${id}`, { 
+                    method: "DELETE",
+                    headers: { "Authorization": `Bearer ${token}` }
+                });
                 if (res.ok) {
                     fetchData();
                     toast.success("Alert configuration deleted");
@@ -172,9 +182,13 @@ export default function AlertsPage() {
         } else if (type === "test" && chan && url) {
             setTestLoading(id || "manual");
             try {
+                const token = await getToken();
                 const res = await fetch(`${API_BASE}/api/alerts/test`, {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
+                    headers: { 
+                        "Content-Type": "application/json",
+                        "Authorization": `Bearer ${token}`
+                    },
                     body: JSON.stringify({ channel: chan, webhook_url: url }),
                 });
                 if (res.ok) {

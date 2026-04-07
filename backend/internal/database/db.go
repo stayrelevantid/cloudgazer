@@ -101,7 +101,7 @@ func (db *DB) GetWeeklyTotalCost(ctx context.Context, accountID string) (float64
 	return total, err
 }
 
-func (db *DB) GetBudgets(ctx context.Context) ([]Budget, error) {
+func (db *DB) GetBudgets(ctx context.Context, userID string) ([]Budget, error) {
 	rows, err := db.Pool.Query(ctx, `
 		SELECT 
 			b.id, b.account_id, ca.account_name, ca.provider, b.amount, b.is_active, b.created_at, b.updated_at,
@@ -113,8 +113,9 @@ func (db *DB) GetBudgets(ctx context.Context) ([]Budget, error) {
 			), 0) as current_spend
 		FROM budgets b
 		JOIN cloud_accounts ca ON ca.id = b.account_id
+		WHERE ca.user_id = $1
 		ORDER BY b.created_at DESC
-	`)
+	`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -131,8 +132,18 @@ func (db *DB) GetBudgets(ctx context.Context) ([]Budget, error) {
 	return budgets, nil
 }
 
-func (db *DB) CreateBudget(ctx context.Context, accountID string, amount float64) error {
-	_, err := db.Pool.Exec(ctx, `
+func (db *DB) CreateBudget(ctx context.Context, userID, accountID string, amount float64) error {
+	// Verify account belongs to user
+	var exists bool
+	err := db.Pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM cloud_accounts WHERE id = $1 AND user_id = $2)", accountID, userID).Scan(&exists)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return fmt.Errorf("unauthorized: account %s does not belong to user %s", accountID, userID)
+	}
+
+	_, err = db.Pool.Exec(ctx, `
 		INSERT INTO budgets (account_id, amount, is_active, updated_at)
 		VALUES ($1, $2, true, CURRENT_TIMESTAMP)
 		ON CONFLICT (account_id) 
@@ -144,7 +155,12 @@ func (db *DB) CreateBudget(ctx context.Context, accountID string, amount float64
 	return err
 }
 
-func (db *DB) DeleteBudget(ctx context.Context, id string) error {
-	_, err := db.Pool.Exec(ctx, "DELETE FROM budgets WHERE id = $1", id)
+func (db *DB) DeleteBudget(ctx context.Context, userID, id string) error {
+	// Only delete if it belongs to a user's account
+	_, err := db.Pool.Exec(ctx, `
+		DELETE FROM budgets b
+		USING cloud_accounts ca
+		WHERE b.account_id = ca.id AND b.id = $1 AND ca.user_id = $2
+	`, id, userID)
 	return err
 }

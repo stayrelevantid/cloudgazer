@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { useAuth } from "@clerk/nextjs";
 import { API_BASE } from "@/lib/config";
 import { Plus, Cloud, Trash2, AlertTriangle, History, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -44,6 +45,7 @@ type Account = {
 };
 
 export default function AccountsPage() {
+    const { getToken } = useAuth();
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [loading, setLoading] = useState(true);
     const [isOpen, setIsOpen] = useState(false);
@@ -62,18 +64,25 @@ export default function AccountsPage() {
         account_name: string;
     } | null>(null);
 
-    const fetchData = () => {
+    const fetchData = useCallback(async () => {
         setLoading(true);
-        fetch(`${API_BASE}/api/accounts`)
-            .then((r) => r.json())
-            .then((d) => setAccounts(d.accounts ?? []))
-            .catch(() => setAccounts([]))
-            .finally(() => setLoading(false));
-    };
+        try {
+            const token = await getToken();
+            const res = await fetch(`${API_BASE}/api/accounts`, {
+                headers: { "Authorization": `Bearer ${token}` }
+            });
+            const d = await res.json();
+            setAccounts(d.accounts ?? []);
+        } catch {
+            setAccounts([]);
+        } finally {
+            setLoading(false);
+        }
+    }, [getToken]);
 
     useEffect(() => {
         fetchData();
-    }, []);
+    }, [fetchData]);
 
     const handleSaveAccount = async () => {
         if (!accountName || !ssmPath) {
@@ -81,9 +90,13 @@ export default function AccountsPage() {
             return;
         }
         try {
+            const token = await getToken();
             const res = await fetch(`${API_BASE}/api/accounts`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: { 
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${token}`
+                },
                 body: JSON.stringify({
                     provider: provider,
                     account_name: accountName,
@@ -120,7 +133,11 @@ export default function AccountsPage() {
         setIsConfirmOpen(false);
 
         try {
-            const res = await fetch(`${API_BASE}/api/accounts?id=${id}`, { method: "DELETE" });
+            const token = await getToken();
+            const res = await fetch(`${API_BASE}/api/accounts?id=${id}`, { 
+                method: "DELETE",
+                headers: { "Authorization": `Bearer ${token}` }
+            });
             if (res.ok) {
                 fetchData();
                 toast.success("Account deleted successfully");
@@ -140,9 +157,13 @@ export default function AccountsPage() {
         setMigrating(id);
 
         try {
+            const token = await getToken();
             const res = await fetch(`${API_BASE}/api/accounts/migrate`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: { 
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${token}`
+                },
                 body: JSON.stringify({
                     account_id: id,
                     months_back: parseInt(monthsBack)

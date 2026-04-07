@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useAuth } from "@clerk/nextjs";
 import { API_BASE } from "@/lib/config";
 import {
     Area,
@@ -63,6 +64,7 @@ function buildChartData(rows: ReportRow[]): { data: ChartPoint[], series: string
 }
 
 export default function DashboardPage() {
+    const { getToken } = useAuth();
     const { format, convert, symbol, exchangeRate } = useCurrency();
     const [rows, setRows] = useState<ReportRow[]>([]);
     const [comparison, setComparison] = useState<ComparisonData[]>([]);
@@ -80,16 +82,19 @@ export default function DashboardPage() {
     const [tags, setTags] = useState<string[]>([]);
     const [selectedTag, setSelectedTag] = useState<string>("all");
 
-    const fetchData = useCallback(() => {
+    const fetchData = useCallback(async () => {
         setLoading(true);
+        const token = await getToken();
+        const headers = { "Authorization": `Bearer ${token}` };
         const params = `range=${timeframe}&granularity=${granularity}&account_id=${selectedAccount === "all" ? "" : selectedAccount}&provider=${selectedProvider === "all" ? "" : selectedProvider}&group_by=${groupBy}&tag=${selectedTag}`;
+        
         Promise.all([
-            fetch(`${API_BASE}/api/reports/advanced?${params}`).then(r => r.json()),
-            fetch(`${API_BASE}/api/reports/resources?${params}`).then(r => r.json()),
-            fetch(`${API_BASE}/api/reports/services?${params}`).then(r => r.json()),
-            fetch(`${API_BASE}/api/reports/historical?${params}`).then(r => r.json()),
-            fetch(`${API_BASE}/api/reports/comparison?${params}`).then(r => r.json()),
-            fetch(`${API_BASE}/api/reports/forecasting?${params}`).then(r => r.json())
+            fetch(`${API_BASE}/api/reports/advanced?${params}`, { headers }).then(r => r.json()),
+            fetch(`${API_BASE}/api/reports/resources?${params}`, { headers }).then(r => r.json()),
+            fetch(`${API_BASE}/api/reports/services?${params}`, { headers }).then(r => r.json()),
+            fetch(`${API_BASE}/api/reports/historical?${params}`, { headers }).then(r => r.json()),
+            fetch(`${API_BASE}/api/reports/comparison?${params}`, { headers }).then(r => r.json()),
+            fetch(`${API_BASE}/api/reports/forecasting?${params}`, { headers }).then(r => r.json())
         ])
             .then(([rData, resData, sData, hData, cData, fData]) => {
                 setRows(rData.reports ?? []);
@@ -105,28 +110,38 @@ export default function DashboardPage() {
                 setHistorical([]);
             })
             .finally(() => setLoading(false));
-    }, [timeframe, granularity, selectedAccount, selectedProvider, groupBy, selectedTag]);
+    }, [timeframe, granularity, selectedAccount, selectedProvider, groupBy, selectedTag, getToken]);
 
     useEffect(() => {
         fetchData();
     }, [fetchData]);
 
     useEffect(() => {
-        fetch(`${API_BASE}/api/accounts`)
-            .then(r => r.json())
-            .then(data => setAccounts(data.accounts ?? []))
-            .catch(() => setAccounts([]));
+        const loadMeta = async () => {
+            const token = await getToken();
+            const headers = { "Authorization": `Bearer ${token}` };
 
-        fetch(`${API_BASE}/api/tags`)
-            .then(r => r.json())
-            .then(data => setTags(data.tags ?? []))
-            .catch(() => setTags([]));
-    }, []);
+            fetch(`${API_BASE}/api/accounts`, { headers })
+                .then(r => r.json())
+                .then(data => setAccounts(data.accounts ?? []))
+                .catch(() => setAccounts([]));
+
+            fetch(`${API_BASE}/api/tags`, { headers })
+                .then(r => r.json())
+                .then(data => setTags(data.tags ?? []))
+                .catch(() => setTags([]));
+        };
+        loadMeta();
+    }, [getToken]);
 
     const handleRefresh = async () => {
         setLoading(true);
         try {
-            const res = await fetch(`${API_BASE}/api/cron/fetch`, { method: "POST" });
+            const token = await getToken();
+            const res = await fetch(`${API_BASE}/api/cron/fetch`, { 
+                method: "POST",
+                headers: { "Authorization": `Bearer ${token}` }
+            });
             if (res.ok) {
                 toast.success("Data synchronized successfully!");
                 fetchData();
