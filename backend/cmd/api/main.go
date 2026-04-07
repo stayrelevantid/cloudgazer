@@ -24,11 +24,6 @@ func toJSON(v interface{}) string {
 	return string(b)
 }
 
-func jsonHeader(w http.ResponseWriter) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-}
-
 func getUserID(r *http.Request) string {
 	claims, ok := clerk.SessionClaimsFromContext(r.Context())
 	if !ok {
@@ -43,6 +38,30 @@ func ensureUser(ctx context.Context, db *database.DB, userID string) error {
 	}
 	_, err := db.Pool.Exec(ctx, "INSERT INTO users (id, email) VALUES ($1, $1) ON CONFLICT DO NOTHING", userID)
 	return err
+}
+
+// corsMiddleware adds CORS headers and handles OPTIONS preflight requests
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		
+		next.ServeHTTP(w, r)
+	})
+}
+
+// jsonResponse adds JSON content-type header
+func jsonResponse(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		next.ServeHTTP(w, r)
+	})
 }
 
 func main() {
@@ -88,7 +107,7 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	// ── Health ──────────────────────────────────────────────────────────
+	// ── Health (Unprotected) ──────────────────────────────────────────
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"success"}`))
@@ -96,13 +115,6 @@ func main() {
 
 	// ── SSM Diagnostic ──────────────────────────────────────────────────
 	mux.HandleFunc("/api/diag/ssm-test", func(w http.ResponseWriter, r *http.Request) {
-		jsonHeader(w)
-		if r.Method == http.MethodOptions {
-			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-			w.WriteHeader(http.StatusOK)
-			return
-		}
 		if ssmClient == nil {
 			http.Error(w, `{"status":"error","message":"SSM Client not initialized"}`, http.StatusInternalServerError)
 			return
@@ -125,13 +137,6 @@ func main() {
 	
 	// Cron Trigger
 	mux.Handle("/api/cron/fetch", clerkhttp.RequireHeaderAuthorization()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		jsonHeader(w)
-		if r.Method == http.MethodOptions {
-			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-			w.WriteHeader(http.StatusOK)
-			return
-		}
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -142,9 +147,7 @@ func main() {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
-		if err := ensureUser(r.Context(), db, userID); err != nil {
-			log.Printf("Failed to ensure user %s: %v", userID, err)
-		}
+		ensureUser(r.Context(), db, userID)
 
 		if err := cron.RunDailyFetch(r.Context(), db, ssmClient, awsRegion, userID); err != nil {
 			log.Printf("Cron fetch error: %v", err)
@@ -157,7 +160,6 @@ func main() {
 
 	// Accounts
 	mux.Handle("/api/accounts", clerkhttp.RequireHeaderAuthorization()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		jsonHeader(w)
 		userID := getUserID(r)
 		if userID == "" {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized); return
@@ -208,9 +210,14 @@ func main() {
 
 	// Migrate
 	mux.Handle("/api/accounts/migrate", clerkhttp.RequireHeaderAuthorization()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		jsonHeader(w); userID := getUserID(r)
+		userID := getUserID(r)
+		if userID == "" { http.Error(w, "Unauthorized", 401); return }
+		ensureUser(r.Context(), db, userID)
+
 		var body struct { AccountID string `json:"account_id"`; MonthsBack int `json:"months_back"` }
-		json.NewDecoder(r.Body).Decode(&body)
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "Invalid body", 400); return
+		}
 		if body.MonthsBack <= 0 { body.MonthsBack = 6 }
 		go func() {
 			ctx := context.Background()
@@ -223,7 +230,7 @@ func main() {
 
 	// Reports - Summary
 	mux.Handle("/api/reports", clerkhttp.RequireHeaderAuthorization()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		jsonHeader(w); userID := getUserID(r); days := r.URL.Query().Get("days")
+		userID := getUserID(r); days := r.URL.Query().Get("days")
 		if userID == "" { http.Error(w, "Unauthorized", 401); return }
 		ensureUser(r.Context(), db, userID)
 		if days == "" { days = "30" }
@@ -240,7 +247,7 @@ func main() {
 
 	// Reports - Services
 	mux.Handle("/api/reports/services", clerkhttp.RequireHeaderAuthorization()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		jsonHeader(w); userID := getUserID(r); timeframe := r.URL.Query().Get("range")
+		userID := getUserID(r); timeframe := r.URL.Query().Get("range")
 		if userID == "" { http.Error(w, "Unauthorized", 401); return }
 		ensureUser(r.Context(), db, userID)
 		
@@ -282,7 +289,7 @@ func main() {
 
 	// Comparison
 	mux.Handle("/api/reports/comparison", clerkhttp.RequireHeaderAuthorization()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		jsonHeader(w); userID := getUserID(r)
+		userID := getUserID(r)
 		if userID == "" { http.Error(w, "Unauthorized", 401); return }
 		ensureUser(r.Context(), db, userID)
 		
@@ -313,7 +320,7 @@ func main() {
 
 	// Forecasting
 	mux.Handle("/api/reports/forecasting", clerkhttp.RequireHeaderAuthorization()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		jsonHeader(w); userID := getUserID(r)
+		userID := getUserID(r)
 		if userID == "" { http.Error(w, "Unauthorized", 401); return }
 		ensureUser(r.Context(), db, userID)
 		
@@ -336,7 +343,7 @@ func main() {
 
 	// Advanced
 	mux.Handle("/api/reports/advanced", clerkhttp.RequireHeaderAuthorization()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		jsonHeader(w); userID := getUserID(r)
+		userID := getUserID(r)
 		if userID == "" { http.Error(w, "Unauthorized", 401); return }
 		ensureUser(r.Context(), db, userID)
 		
@@ -368,7 +375,7 @@ func main() {
 
 	// Resources
 	mux.Handle("/api/reports/resources", clerkhttp.RequireHeaderAuthorization()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		jsonHeader(w); userID := getUserID(r); tr := r.URL.Query().Get("range")
+		userID := getUserID(r); tr := r.URL.Query().Get("range")
 		if userID == "" { http.Error(w, "Unauthorized", 401); return }
 		ensureUser(r.Context(), db, userID)
 		
@@ -392,14 +399,18 @@ func main() {
 
 	// Janitor
 	mux.Handle("/api/janitor", clerkhttp.RequireHeaderAuthorization()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		jsonHeader(w); userID := getUserID(r)
+		userID := getUserID(r)
+		if userID == "" { http.Error(w, "Unauthorized", 401); return }
+		ensureUser(r.Context(), db, userID)
 		results, _ := janitorSvc.GetIdleResources(r.Context(), userID)
 		fmt.Fprintf(w, `{"janitor":%s}`, toJSON(results))
 	})))
 
 	// Budgets
 	mux.Handle("/api/budgets", clerkhttp.RequireHeaderAuthorization()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		jsonHeader(w); userID := getUserID(r)
+		userID := getUserID(r)
+		if userID == "" { http.Error(w, "Unauthorized", 401); return }
+		ensureUser(r.Context(), db, userID)
 		if r.Method == http.MethodGet {
 			b, _ := db.GetBudgets(r.Context(), userID)
 			fmt.Fprintf(w, `{"budgets":%s}`, toJSON(b)); return
@@ -419,7 +430,9 @@ func main() {
 
 	// Alerts
 	mux.Handle("/api/alerts", clerkhttp.RequireHeaderAuthorization()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		jsonHeader(w); userID := getUserID(r)
+		userID := getUserID(r)
+		if userID == "" { http.Error(w, "Unauthorized", 401); return }
+		ensureUser(r.Context(), db, userID)
 		if r.Method == http.MethodGet {
 			rows, _ := db.Pool.Query(r.Context(), "SELECT channel, webhook_url, weekly_threshold, account_id FROM alert_configs ac JOIN cloud_accounts ca ON ca.id = ac.account_id WHERE ca.user_id = $1", userID)
 			defer rows.Close()
@@ -444,8 +457,11 @@ func main() {
 		}
 	})))
 
+	// Global Middleware
+	finalHandler := corsMiddleware(jsonResponse(mux))
+
 	port := os.Getenv("PORT")
 	if port == "" { port = "8080" }
 	log.Printf("Server running on port %s", port)
-	http.ListenAndServe(fmt.Sprintf(":%s", port), mux)
+	http.ListenAndServe(fmt.Sprintf(":%s", port), finalHandler)
 }
