@@ -57,35 +57,48 @@ func (f *AWSFetcher) FetchCost(ctx context.Context, region, credentialsJSON, tag
 	startStr := start.Format("2006-01-02")
 	endStr := end.Format("2006-01-02")
 
-	input := &costexplorer.GetCostAndUsageInput{
-		TimePeriod: &ceTypes.DateInterval{
-			Start: aws.String(startStr),
-			End:   aws.String(endStr),
-		},
-		Granularity: ceTypes.GranularityDaily,
-		Metrics:     []string{"UnblendedCost"},
-		GroupBy: []ceTypes.GroupDefinition{
-			{
-				Type: ceTypes.GroupDefinitionTypeDimension,
-				Key:  aws.String("SERVICE"),
+	var allResults []ceTypes.ResultByTime
+	var nextToken *string
+
+	for {
+		input := &costexplorer.GetCostAndUsageInput{
+			TimePeriod: &ceTypes.DateInterval{
+				Start: aws.String(startStr),
+				End:   aws.String(endStr),
 			},
-		},
-	}
+			Granularity: ceTypes.GranularityDaily,
+			Metrics:     []string{"UnblendedCost"},
+			GroupBy: []ceTypes.GroupDefinition{
+				{
+					Type: ceTypes.GroupDefinitionTypeDimension,
+					Key:  aws.String("SERVICE"),
+				},
+			},
+			NextPageToken: nextToken,
+		}
 
-	if tagKey != "" {
-		input.GroupBy = append(input.GroupBy, ceTypes.GroupDefinition{
-			Type: ceTypes.GroupDefinitionTypeTag,
-			Key:  aws.String(tagKey),
-		})
-	}
+		if tagKey != "" {
+			input.GroupBy = append(input.GroupBy, ceTypes.GroupDefinition{
+				Type: ceTypes.GroupDefinitionTypeTag,
+				Key:  aws.String(tagKey),
+			})
+		}
 
-	out, err := ceClient.GetCostAndUsage(ctx, input)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get cost and usage: %w", err)
+		out, err := ceClient.GetCostAndUsage(ctx, input)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get cost and usage (page): %w", err)
+		}
+
+		allResults = append(allResults, out.ResultsByTime...)
+		nextToken = out.NextPageToken
+
+		if nextToken == nil || *nextToken == "" {
+			break
+		}
 	}
 
 	var records []CostRecord
-	for _, res := range out.ResultsByTime {
+	for _, res := range allResults {
 		recordDate, err := time.Parse("2006-01-02", *res.TimePeriod.Start)
 		if err != nil {
 			continue // Skip invalid dates
