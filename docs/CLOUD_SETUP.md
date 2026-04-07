@@ -169,5 +169,41 @@ For centralized management, CloudGazer expects the GCP JSON key to be stored in 
 
 ---
 
+## 🔵 GCP Phase 2: BigQuery Billing Export (Optional for Detailed Costs)
+
+To view real, detailed historical cost data (Daily, Service-level, etc.), GCP requires you to export your billing data to **BigQuery**. Without this, CloudGazer can only perform a "Connectivity Test".
+
+### 1. Create a BigQuery Dataset
+1. Go to the [BigQuery Console](https://console.cloud.google.com/bigquery).
+2. Click the three dots next to your **Project ID** and select **Create dataset**.
+3. **Dataset ID**: `billing_export` (or similar).
+4. **Location**: Choose a region (e.g., `asia-southeast1`).
+5. Click **Create Dataset**.
+
+### 2. Enable Billing Export
+1. Go to **Billing** -> **Billing Export** in the GCP Console.
+2. Select the **BigQuery Export** tab.
+3. Click **Edit Settings** (or **Set Up Export**).
+4. **Project**: Select the project where you created the dataset.
+5. **Dataset**: Select your `billing_export` dataset.
+6. **Export Type**: Select **Standard Usage Cost** (this is usually sufficient and avoids high costs).
+7. Click **Save**.
+
+### 3. Grant BigQuery Permissions to Service Account
+The `cloudgazer-monitor` service account needs permission to query this dataset:
+1. Go to **IAM & Admin** -> **IAM**.
+2. Find your `cloudgazer-monitor` service account.
+3. Click the **Edit** (pencil) icon.
+4. Click **Add Another Role**.
+5. Select **BigQuery** -> **BigQuery Data Viewer**.
+6. Click **Add Another Role** again.
+7. Select **BigQuery** -> **BigQuery Job User**.
+8. Click **Save**.
+
+> [!NOTE]
+> **Propagation Delay**: After enabling the export, it may take **24-48 hours** for the first data to appear in BigQuery. CloudGazer will start pulling data once the table `gcp_billing_export_v1_...` is populated by GCP.
+
+---
+
 ## ✅ Next Steps
 Once you have the SSM paths ready, proceed to the **CloudGazer Dashboard** and add these accounts under the **Accounts** menu using the exact SSM paths defined above.
