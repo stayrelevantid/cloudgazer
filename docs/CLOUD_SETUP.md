@@ -1,6 +1,6 @@
 # ☁️ CloudGazer: Cloud Credential Setup Guide
 
-This guide provides step-by-step instructions for setting up dedicated, read-only access for CloudGazer in AWS and GCP via the Cloud Consoles.
+This guide provides step-by-step instructions for setting up dedicated, read-only access for CloudGazer in AWS and GCP.
 
 ## 🔐 Security Principle
 We use the **Principle of Least Privilege**. CloudGazer only requires **Read-Only** access to view your resource usage and billing data.

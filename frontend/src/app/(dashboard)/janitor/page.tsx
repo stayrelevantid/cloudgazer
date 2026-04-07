@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { API_BASE } from "@/lib/config";
 import { Trash2, ShieldAlert, Cpu, Globe, RefreshCcw, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -27,7 +28,6 @@ import {
     AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
 type Resource = {
     id: string;
