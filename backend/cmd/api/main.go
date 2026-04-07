@@ -71,6 +71,13 @@ func main() {
 	// ── SSM Diagnostic ──────────────────────────────────────────────────
 	mux.HandleFunc("/api/diag/ssm-test", func(w http.ResponseWriter, r *http.Request) {
 		jsonHeader(w)
+		if r.Method == http.MethodOptions {
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
 		if ssmClient == nil {
 			http.Error(w, `{"status":"error","message":"SSM Client not initialized"}`, http.StatusInternalServerError)
 			return
@@ -95,6 +102,14 @@ func main() {
 
 	// ── Cron Trigger ────────────────────────────────────────────────────
 	mux.HandleFunc("/api/cron/fetch", func(w http.ResponseWriter, r *http.Request) {
+		jsonHeader(w)
+		if r.Method == http.MethodOptions {
+			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -220,6 +235,14 @@ func main() {
 	})
 
 	mux.HandleFunc("/api/accounts/migrate", func(w http.ResponseWriter, r *http.Request) {
+		jsonHeader(w)
+		if r.Method == http.MethodOptions {
+			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return

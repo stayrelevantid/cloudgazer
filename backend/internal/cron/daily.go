@@ -59,7 +59,8 @@ func runSyncForRange(ctx context.Context, db *database.DB, ssmClient *aws.SSMCli
 			continue
 		}
 
-		log.Printf("Processing account: %s (%s) for range %s to %s", accountName, provider, start.Format("2006-01-02"), end.Format("2006-01-02"))
+		log.Printf("[Sync] Processing account: %s (%s)", accountName, provider)
+		log.Printf("[Sync] Date Range: %s to %s", start.Format("2006-01-02"), end.Format("2006-01-02"))
 
 		var records []fetcher.CostRecord
 		var err error
@@ -108,9 +109,11 @@ func runSyncForRange(ctx context.Context, db *database.DB, ssmClient *aws.SSMCli
 		}
 
 		if err != nil {
-			log.Printf("Failed to fetch costs for %s: %v", accountName, err)
+			log.Printf("[Sync] Error: Failed to fetch costs for %s: %v", accountName, err)
 			continue
 		}
+
+		log.Printf("[Sync] Success! Retrieved %d records for %s", len(records), accountName)
 
 		// 3. Persist to DB (Idempotent)
 		for _, rec := range records {
