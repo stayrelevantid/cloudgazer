@@ -85,20 +85,28 @@ GCP access is managed through a dedicated Service Account.
 5. **Name**: `cloudgazer-monitor`.
 6. Click **Create and Continue**.
 
-### 2. Grant Access
-Assign the following roles to the service account to grant visibility:
-- `Billing Account Viewer` (Required for cost data).
-- `Compute Viewer` (Required for resource discovery).
+### 2. Grant Project-Level Access
+In the setup wizard, add this role for resource discovery at the project level:
+- **Compute Viewer**
 Click **Continue** and then **Done**.
 
-### 3. Generate JSON Key
+### 3. Grant Billing Access
+To view cost data, the service account must be added to your **Billing Account** (not just the project):
+1. Navigate to **Billing** -> **Account Management** in the GCP Console.
+2. Ensure you are viewing the correct Billing Account.
+3. Click **Show Info Panel** on the right side if it is not visible.
+4. Click **Add Principal** and paste the email of your new `cloudgazer-monitor` service account.
+5. Select the role: **Billing** -> **Billing Account Viewer**.
+6. Click **Save**.
+
+### 4. Generate JSON Key
 1. Click on the newly created `cloudgazer-monitor` service account.
 2. Go to the **Keys** tab.
 3. Click **Add Key** -> **Create new key**.
 4. Select **JSON** and click **Create**. 
 5. **SAVE THIS FILE SECURELY.** You will need its content for AWS SSM.
 
-### 4. Store JSON in AWS SSM
+### 5. Store JSON in AWS SSM
 For centralized management, CloudGazer expects the GCP JSON key to be stored in AWS SSM.
 1. Navigate back to [AWS SSM Parameter Store](https://console.aws.amazon.com/systems-manager/parameters) in your primary AWS account.
 2. Click **Create parameter**.
