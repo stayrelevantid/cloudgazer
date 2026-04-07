@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/stayrelevant-id/cloudgazer/internal/aws"
 	"github.com/stayrelevant-id/cloudgazer/internal/database"
 	"github.com/stayrelevant-id/cloudgazer/internal/fetcher"
@@ -38,12 +39,13 @@ func RunHistoricalSync(ctx context.Context, db *database.DB, ssmClient *aws.SSMC
 }
 
 func runSyncForRange(ctx context.Context, db *database.DB, ssmClient *aws.SSMClient, awsRegion string, start, end time.Time, filterAccountID string) error {
-	query := "SELECT id, provider, account_name, aws_ssm_path FROM cloud_accounts WHERE is_active = true"
+	var rows pgx.Rows
+	var err error
 	if filterAccountID != "" {
-		query += fmt.Sprintf(" AND id = '%s'", filterAccountID)
+		rows, err = db.Pool.Query(ctx, "SELECT id, provider, account_name, aws_ssm_path FROM cloud_accounts WHERE is_active = true AND id = $1", filterAccountID)
+	} else {
+		rows, err = db.Pool.Query(ctx, "SELECT id, provider, account_name, aws_ssm_path FROM cloud_accounts WHERE is_active = true")
 	}
-
-	rows, err := db.Pool.Query(ctx, query)
 	if err != nil {
 		return err
 	}
@@ -115,16 +117,29 @@ func runSyncForRange(ctx context.Context, db *database.DB, ssmClient *aws.SSMCli
 
 		log.Printf("[Sync] Success! Retrieved %d records for %s", len(records), accountName)
 
-		// 3. Persist to DB (Idempotent)
-		for _, rec := range records {
-			_, err = db.Pool.Exec(ctx, `
-				INSERT INTO cost_reports (account_id, amount_usd, record_date, service_name, resource_name, tag_name)
-				VALUES ($1, $2, $3, $4, $5, $6)
-				ON CONFLICT (account_id, record_date, service_name, resource_name, tag_name)
-				DO UPDATE SET amount_usd = EXCLUDED.amount_usd
-			`, id, rec.AmountUSD, rec.Date.Format("2006-01-02"), rec.ServiceName, rec.ResourceName, rec.TagName)
+		// 3. Persist to DB (Batch Upsert)
+		batchSize := 500
+		for i := 0; i < len(records); i += batchSize {
+			endBatch := i + batchSize
+			if endBatch > len(records) {
+				endBatch = len(records)
+			}
+			batch := records[i:endBatch]
+
+			// Construct multi-row insert
+			values := []interface{}{}
+			sqlStr := "INSERT INTO cost_reports (account_id, amount_usd, record_date, service_name, resource_name, tag_name) VALUES "
+			for j, rec := range batch {
+				n := j * 6
+				sqlStr += fmt.Sprintf("($%d, $%d, $%d, $%d, $%d, $%d),", n+1, n+2, n+3, n+4, n+5, n+6)
+				values = append(values, id, rec.AmountUSD, rec.Date.Format("2006-01-02"), rec.ServiceName, rec.ResourceName, rec.TagName)
+			}
+			sqlStr = sqlStr[:len(sqlStr)-1] // Remove trailing comma
+			sqlStr += " ON CONFLICT (account_id, record_date, service_name, resource_name, tag_name) DO UPDATE SET amount_usd = EXCLUDED.amount_usd"
+
+			_, err = db.Pool.Exec(ctx, sqlStr, values...)
 			if err != nil {
-				log.Printf("Failed to upsert cost record for %s: %v", accountName, err)
+				log.Printf("Failed to batch upsert cost records for %s (batch %d): %v", accountName, i, err)
 			}
 		}
 
