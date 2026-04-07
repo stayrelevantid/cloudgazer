@@ -53,3 +53,4 @@
 !/frontend/.env.local.example
 /backend/api
 /backend/main
+/backend/api_server
