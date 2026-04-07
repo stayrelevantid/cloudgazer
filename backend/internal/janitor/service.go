@@ -27,9 +27,9 @@ type JanitorResult struct {
 	Resources   []aws.IdleResource `json:"resources"`
 }
 
-func (s *Service) GetIdleResources(ctx context.Context) ([]JanitorResult, error) {
-	// 1. Get all active cloud accounts
-	rows, err := s.db.Pool.Query(ctx, "SELECT id, provider, account_name, aws_ssm_path FROM cloud_accounts WHERE is_active = true")
+func (s *Service) GetIdleResources(ctx context.Context, userID string) ([]JanitorResult, error) {
+	// 1. Get all active cloud accounts belonging to this user
+	rows, err := s.db.Pool.Query(ctx, "SELECT id, provider, account_name, aws_ssm_path FROM cloud_accounts WHERE is_active = true AND user_id = $1", userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query accounts: %w", err)
 	}

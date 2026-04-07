@@ -15,7 +15,7 @@ import (
 	"os"
 )
 
-func RunDailyFetch(ctx context.Context, db *database.DB, ssmClient *aws.SSMClient, awsRegion string) error {
+func RunDailyFetch(ctx context.Context, db *database.DB, ssmClient *aws.SSMClient, awsRegion string, userID string) error {
 	log.Println("Starting Daily Cost Fetch...")
 
 	// Default to yesterday
@@ -23,10 +23,10 @@ func RunDailyFetch(ctx context.Context, db *database.DB, ssmClient *aws.SSMClien
 	yesterday := now.AddDate(0, 0, -1)
 	today := now
 
-	return runSyncForRange(ctx, db, ssmClient, awsRegion, yesterday, today, "")
+	return runSyncForRange(ctx, db, ssmClient, awsRegion, yesterday, today, "", userID)
 }
 
-func RunHistoricalSync(ctx context.Context, db *database.DB, ssmClient *aws.SSMClient, awsRegion string, accountID string, monthsBack int) error {
+func RunHistoricalSync(ctx context.Context, db *database.DB, ssmClient *aws.SSMClient, awsRegion string, accountID string, monthsBack int, userID string) error {
 	log.Printf("Starting Historical Sync for %d months...", monthsBack)
 
 	now := time.Now().UTC()
@@ -35,17 +35,26 @@ func RunHistoricalSync(ctx context.Context, db *database.DB, ssmClient *aws.SSMC
 	// Set start to the beginning of that month
 	start = time.Date(start.Year(), start.Month(), 1, 0, 0, 0, 0, time.UTC)
 
-	return runSyncForRange(ctx, db, ssmClient, awsRegion, start, now, accountID)
+	return runSyncForRange(ctx, db, ssmClient, awsRegion, start, now, accountID, userID)
 }
 
-func runSyncForRange(ctx context.Context, db *database.DB, ssmClient *aws.SSMClient, awsRegion string, start, end time.Time, filterAccountID string) error {
+func runSyncForRange(ctx context.Context, db *database.DB, ssmClient *aws.SSMClient, awsRegion string, start, end time.Time, filterAccountID string, filterUserID string) error {
 	var rows pgx.Rows
 	var err error
+	
+	query := "SELECT id, provider, account_name, aws_ssm_path FROM cloud_accounts WHERE is_active = true"
+	args := []interface{}{}
+	
 	if filterAccountID != "" {
-		rows, err = db.Pool.Query(ctx, "SELECT id, provider, account_name, aws_ssm_path FROM cloud_accounts WHERE is_active = true AND id = $1", filterAccountID)
-	} else {
-		rows, err = db.Pool.Query(ctx, "SELECT id, provider, account_name, aws_ssm_path FROM cloud_accounts WHERE is_active = true")
+		query += fmt.Sprintf(" AND id = $%d", len(args)+1)
+		args = append(args, filterAccountID)
 	}
+	if filterUserID != "" {
+		query += fmt.Sprintf(" AND user_id = $%d", len(args)+1)
+		args = append(args, filterUserID)
+	}
+
+	rows, err = db.Pool.Query(ctx, query, args...)
 	if err != nil {
 		return err
 	}

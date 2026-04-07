@@ -51,3 +51,5 @@
 /frontend/.env.test.local
 /frontend/.env.production.local
 !/frontend/.env.local.example
+/backend/api
+/backend/main
