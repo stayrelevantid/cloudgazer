@@ -12,9 +12,9 @@ import (
 )
 
 type Account struct {
-	ID          string
-	Name        string
-	Provider    string
+	ID         string
+	Name       string
+	Provider   string
 	SSMPatPath string
 }
 
@@ -70,13 +70,13 @@ func main() {
 	// 4. Generate 365 days of data in memory first for batching
 	log.Println("Preparing data for 365 days...")
 	now := time.Now().UTC()
-	
+
 	batch := &pgx.Batch{}
 
 	for i := 0; i < 365; i++ {
 		date := now.AddDate(0, 0, -i)
 		dateStr := date.Format("2006-01-02")
-		
+
 		for _, acc := range accounts {
 			services := awsServices
 			if acc.Provider == "gcp" {
@@ -97,16 +97,16 @@ func main() {
 
 					// Pick one project tag for this resource
 					tag := projects[rand.Intn(len(projects))]
-					
+
 					base := 1.0 + rand.Float64()*15.0
 					if svc == "Amazon EC2" || svc == "Compute Engine" || svc == "GKE" {
 						base *= 5
 					}
-					
+
 					fluctuation := 0.9 + rand.Float64()*0.2
 					amount := base * fluctuation
 
-					if rand.Float64() < 0.01 { 
+					if rand.Float64() < 0.01 {
 						amount *= 5.0
 					}
 

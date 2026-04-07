@@ -2,10 +2,12 @@ package aws
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 )
@@ -14,11 +16,23 @@ type JanitorClient struct {
 	client *ec2.Client
 }
 
-func NewJanitorClient(region string) (*JanitorClient, error) {
+func NewJanitorClient(region, credentialsJSON string) (*JanitorClient, error) {
 	ctx := context.TODO()
 	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
 	if err != nil {
 		return nil, fmt.Errorf("unable to load AWS config for Janitor: %w", err)
+	}
+
+	if credentialsJSON != "" {
+		var creds struct {
+			AccessKeyId     string `json:"AccessKeyId"`
+			SecretAccessKey string `json:"SecretAccessKey"`
+		}
+		if err := json.Unmarshal([]byte(credentialsJSON), &creds); err != nil {
+			return nil, fmt.Errorf("failed to parse AWS credentials JSON: %w", err)
+		}
+		provider := credentials.NewStaticCredentialsProvider(creds.AccessKeyId, creds.SecretAccessKey, "")
+		cfg.Credentials = aws.NewCredentialsCache(provider)
 	}
 
 	client := ec2.NewFromConfig(cfg)
