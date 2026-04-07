@@ -20,7 +20,6 @@ const DEFAULT_RATE = 15700;
 export function CurrencyProvider({ children }: { children: React.ReactNode }) {
     const [currency, setCurrencyState] = useState<Currency>("USD");
     const [exchangeRate, setExchangeRate] = useState(DEFAULT_RATE);
-    const [mounted, setMounted] = useState(false);
 
     useEffect(() => {
         const saved = localStorage.getItem("app_currency") as Currency;
@@ -29,7 +28,7 @@ export function CurrencyProvider({ children }: { children: React.ReactNode }) {
         }
 
         // Fetch latest rate from Frankfurter API
-        fetch("https://api.frankfurter.app/latest?from=USD&to=IDR")
+        fetch("https://api.frankfurter.dev/v1/latest?base=USD&symbols=IDR")
             .then(res => res.json())
             .then(data => {
                 if (data?.rates?.IDR) {
@@ -37,8 +36,6 @@ export function CurrencyProvider({ children }: { children: React.ReactNode }) {
                 }
             })
             .catch(err => console.error("Failed to fetch exchange rate:", err));
-
-        setMounted(true);
     }, []);
 
     const setCurrency = (c: Currency) => {
