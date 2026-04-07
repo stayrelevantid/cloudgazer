@@ -21,7 +21,7 @@ type Account struct {
 func main() {
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		dbURL = "postgresql://neondb_owner:npg_xyRia2kmhPW9@ep-gentle-dust-a1fj937t-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+		log.Fatal("DATABASE_URL is not set")
 	}
 
 	conn, err := pgx.Connect(context.Background(), dbURL)
