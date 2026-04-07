@@ -366,6 +366,11 @@ func main() {
 			whereClause += fmt.Sprintf(" AND ca.provider = '%s'", provider)
 		}
 
+		tagParam := r.URL.Query().Get("tag")
+		if tagParam != "" && tagParam != "all" {
+			whereClause += fmt.Sprintf(" AND cr.tag_name = '%s'", tagParam)
+		}
+
 		rows, err := db.Pool.Query(r.Context(), fmt.Sprintf(`
 			SELECT 
 				ca.account_name,
@@ -424,6 +429,11 @@ func main() {
 		provider := r.URL.Query().Get("provider")
 		if provider != "" {
 			extraWhere += fmt.Sprintf(" AND ca.provider = '%s'", provider)
+		}
+
+		tagParam := r.URL.Query().Get("tag")
+		if tagParam != "" && tagParam != "all" {
+			extraWhere += fmt.Sprintf(" AND cr.tag_name = '%s'", tagParam)
 		}
 
 		rows, err := db.Pool.Query(r.Context(), fmt.Sprintf(`
@@ -635,6 +645,11 @@ func main() {
 			whereClause += fmt.Sprintf(" AND ca.provider = '%s'", provider)
 		}
 
+		tagParam := r.URL.Query().Get("tag")
+		if tagParam != "" && tagParam != "all" {
+			whereClause += fmt.Sprintf(" AND cr.tag_name = '%s'", tagParam)
+		}
+
 		rows, err := db.Pool.Query(r.Context(), fmt.Sprintf(`
 			SELECT 
 				DATE_TRUNC('%s', cr.record_date)::text as period,
@@ -833,6 +848,11 @@ func main() {
 		provider := r.URL.Query().Get("provider")
 		if provider != "" {
 			extraWhere += fmt.Sprintf(" AND ca.provider = '%s'", provider)
+		}
+
+		tagParam := r.URL.Query().Get("tag")
+		if tagParam != "" && tagParam != "all" {
+			extraWhere += fmt.Sprintf(" AND cr.tag_name = '%s'", tagParam)
 		}
 
 		rows, err := db.Pool.Query(r.Context(), fmt.Sprintf(`
