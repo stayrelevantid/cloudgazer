@@ -18,37 +18,42 @@ func NewGCPFetcher() *GCPFetcher {
 // FetchCost pulls GCP costs for a given billingAccountID.
 // It uses serviceAccountJSON provided from AWS SSM to authenticate.
 func (g *GCPFetcher) FetchCost(ctx context.Context, serviceAccountJSON []byte, billingAccountID string, start, end time.Time) ([]CostRecord, error) {
+	if billingAccountID == "" {
+		return nil, fmt.Errorf("billing account ID is empty")
+	}
+
 	client, err := cloudbilling.NewService(ctx, option.WithCredentialsJSON(serviceAccountJSON))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create GCP billing client: %w", err)
+		return nil, fmt.Errorf("GCP Auth Failed: invalid service account JSON: %w", err)
 	}
 
 	// billingAccountName format required by API: "billingAccounts/{billing_account_id}"
 	accountName := fmt.Sprintf("billingAccounts/%s", billingAccountID)
 
-	// Since Cloud Billing API (Cost Management) lacks a dedicated easy "yesterday's unblended group by" API natively
-	// (unlike AWS CE) without BigQuery Export, we are using the Projects API to approximate some structure,
-	// but a proper billing API endpoint needs to be used based on what's available.
-	// For MVP, we will list the billing account's associated projects to ensure auth works.
-
 	projSvc := cloudbilling.NewBillingAccountsProjectsService(client)
-	res, err := projSvc.List(accountName).Do()
+	res, err := projSvc.List(accountName).Context(ctx).Do()
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch GCP projects for billing account: %w", err)
+		return nil, fmt.Errorf("GCP Connectivity Failed for %s: %w (check SA permissions: Billing Account Viewer)", billingAccountID, err)
 	}
 
 	var records []CostRecord
 	now := time.Now().UTC()
 	yesterday := now.AddDate(0, 0, -1)
 
-	// Example generic mock integration returning 0 cost per project attached to the billing account
-	// Because Cloud Billing Catalog / Cost API directly doesn't yield grouped cost cleanly without BigQuery
+	// Since Cloud Billing API (without BigQuery) doesn't provide granular costs,
+	// we use project count as a "connectivity success" indicator.
+	if len(res.ProjectBillingInfo) == 0 {
+		fmt.Printf("GCP Sync: Success! Connected to %s, but found no active projects.\n", billingAccountID)
+	} else {
+		fmt.Printf("GCP Sync: Success! Connected to %s, found %d active projects.\n", billingAccountID, len(res.ProjectBillingInfo))
+	}
+
 	for _, proj := range res.ProjectBillingInfo {
 		records = append(records, CostRecord{
-			AmountUSD:   0.0, // Placeholder
+			AmountUSD:   0.0, // Minimal dummy cost for connectivity success
 			Date:        yesterday,
-			ServiceName: proj.ProjectId,
-			TagName:     "untagged",
+			ServiceName: fmt.Sprintf("GCP Project: %s", proj.ProjectId),
+			TagName:     "connectivity-test",
 		})
 	}
 

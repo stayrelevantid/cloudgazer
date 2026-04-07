@@ -164,6 +164,9 @@ For centralized management, CloudGazer expects the GCP JSON key to be stored in 
 5. **Value**: Open the GCP JSON file you downloaded in a text editor, copy all of the contents, and paste it here.
 6. Click **Create parameter**.
 
+> [!IMPORTANT]
+> **Dashboard Integration**: When adding this account in the CloudGazer dashboard, use your **GCP Billing Account ID** (e.g., `012345-6789AB-CDEF01`) as the **Account Name**. This is required for the integration to know which billing account to monitor.
+
 ---
 
 ## ✅ Next Steps

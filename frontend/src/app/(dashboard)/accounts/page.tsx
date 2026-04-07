@@ -199,8 +199,16 @@ export default function AccountsPage() {
                                 </Select>
                             </div>
                             <div className="grid gap-2">
-                                <Label htmlFor="name" className="text-muted-foreground">Account Name</Label>
-                                <Input id="name" value={accountName} onChange={e => setAccountName(e.target.value)} placeholder="e.g. Zenith-Production" className="bg-background border-border focus-visible:ring-primary" />
+                                <Label htmlFor="name" className="text-muted-foreground">
+                                    {provider === "aws" ? "Account Name (Alias)" : "GCP Billing Account ID"}
+                                </Label>
+                                <Input 
+                                    id="name" 
+                                    value={accountName} 
+                                    onChange={e => setAccountName(e.target.value)} 
+                                    placeholder={provider === "aws" ? "e.g. Zenith-Production" : "e.g. 012345-6789AB-CDEF01"} 
+                                    className="bg-background border-border focus-visible:ring-primary" 
+                                />
                             </div>
                             <div className="grid gap-2">
                                 <Label htmlFor="ssm" className="text-muted-foreground">AWS SSM Path</Label>
