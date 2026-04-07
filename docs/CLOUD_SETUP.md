@@ -7,9 +7,9 @@ We use the **Principle of Least Privilege**. CloudGazer only requires **Read-Onl
 
 ---
 
-## 🟠 AWS Setup (IAM Role)
+## 🟠 AWS Setup (IAM User with JSON Key)
 
-We recommend using an IAM Role for secure, cross-account or same-account access.
+We will create a dedicated IAM User and store its programmatic access keys in AWS SSM as a JSON block, similar to a GCP Service Account.
 
 ### 1. Create a Dedicated IAM Policy
 Instead of giving full `ReadOnlyAccess`, we will create a dedicated policy explicitly for CloudGazer.
@@ -39,36 +39,37 @@ Instead of giving full `ReadOnlyAccess`, we will create a dedicated policy expli
 5. Name the policy: `CloudGazerAccess` and provide a description.
 6. Click **Create policy**.
 
-### 2. Create the IAM Role
-1. In the IAM Console, go to **Roles** -> **Create role**.
-2. Select **Custom trust policy** as the trusted entity type.
-3. Paste the following JSON (Replace `YOUR_ACCOUNT_ID` with the AWS Account ID where CloudGazer is running):
+### 2. Create the IAM User & Attach Policy
+1. In the IAM Console, go to **Users** -> **Create user**.
+2. **User name**: `CloudGazerServiceUser`.
+3. Do **not** check the box for AWS Management Console access (programmatic access only). Click **Next**.
+4. Select **Attach policies directly**.
+5. Search for and select the `CloudGazerAccess` policy you created in Step 1.
+6. Click **Next** and then **Create user**.
+
+### 3. Generate Access Keys & Format as JSON
+1. Click on the newly created `CloudGazerServiceUser`.
+2. Go to the **Security credentials** tab.
+3. Scroll down to **Access keys** and click **Create access key**.
+4. Select **Application running outside AWS** (or Other), and click **Next**.
+5. Click **Create access key**.
+6. **Do not close this page yet!** Open a local text editor and create a new JSON file following this exact structure, pasting your new keys:
 ```json
 {
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Principal": { "AWS": "arn:aws:iam::YOUR_ACCOUNT_ID:root" },
-      "Action": "sts:AssumeRole"
-    }
-  ]
+  "AccessKeyId": "AKIA...",
+  "SecretAccessKey": "..."
 }
 ```
-4. Click **Next**.
-5. Search for and select the `CloudGazerAccess` policy you created in Step 1.
-6. Click **Next**.
-7. **Role name**: `CloudGazerReadOnlyRole`.
-8. Click **Create role**.
+7. Save this temporary file securely. You can now click **Done** in the AWS console.
 
-### 3. Store ARN in AWS SSM
-CloudGazer reads the Role ARN from AWS Systems Manager (SSM) Parameter Store.
+### 4. Store JSON in AWS SSM
+CloudGazer reads this JSON credential from AWS Systems Manager (SSM) Parameter Store.
 1. Navigate to [SSM Parameter Store](https://console.aws.amazon.com/systems-manager/parameters).
 2. Click **Create parameter**.
-3. **Name**: `/cloudgazer/aws-role-arn` (or your preferred path).
+3. **Name**: `/cloudgazer/aws-credentials` (or your preferred path).
 4. **Tier**: `Standard`.
 5. **Type**: `SecureString`.
-6. **Value**: Paste the **ARN** of the role you just created (e.g., `arn:aws:iam::123456789012:role/CloudGazerReadOnlyRole`).
+6. **Value**: Paste the **entire JSON block** you authored in the previous step.
 7. Click **Create parameter**.
 
 ---

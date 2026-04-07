@@ -24,10 +24,11 @@ Clean up all dummy/mock data before adding real accounts.
 ## 🔑 Phase 2: Cloud Credential Setup
 Prepare your cloud providers for read-only access. Follow the [Manual Setup Guide](file:///Users/muhammad.indragiri/Kerja/cloudgazer/docs/CLOUD_SETUP.md) for detailed steps.
 
-### AWS (Dedicated IAM Role)
-- [ ] Create IAM Role (`CloudGazerReadOnlyRole`) with dedicated JSON policy.
-- [ ] Configure Trust Policy (JSON) to allow account-level access.
-- [ ] Save Role ARN in AWS SSM Parameter Store as `SecureString` (e.g., `/cloudgazer/aws-role-arn`).
+### AWS (Dedicated IAM User)
+- [ ] Create IAM Policy (`CloudGazerAccess`) with required permissions.
+- [ ] Create IAM User (`CloudGazerServiceUser`) and attach the policy.
+- [ ] Generate Programmatic Access Keys and structure them as a JSON object.
+- [ ] Save the JSON block in AWS SSM Parameter Store as `SecureString` (e.g., `/cloudgazer/aws-credentials`).
 
 ### GCP (Dedicated Service Account)
 - [ ] Create Service Account (`cloudgazer-monitor`) with `Billing Viewer` & `Compute Viewer`.

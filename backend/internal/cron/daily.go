@@ -70,7 +70,7 @@ func runSyncForRange(ctx context.Context, db *database.DB, ssmClient *aws.SSMCli
 				// Base randomness on date and account id
 				seed := int64(d.Unix()) + int64(id[0])
 				randVal := (float64(seed%100) / 100.0) * 10.0
-				
+
 				if provider == "aws" {
 					records = append(records, fetcher.CostRecord{ServiceName: "EC2 - Instances", ResourceName: "i-0987abcd1234", TagName: "Project:Alpha", AmountUSD: 15.0 + randVal, Date: d})
 					records = append(records, fetcher.CostRecord{ServiceName: "S3", ResourceName: "static-assets-cdn", TagName: "Project:Alpha", AmountUSD: 2.5 + randVal/5, Date: d})
@@ -81,11 +81,11 @@ func runSyncForRange(ctx context.Context, db *database.DB, ssmClient *aws.SSMCli
 				}
 			}
 		} else if provider == "aws" {
-			roleARN := ""
+			credentialsJSON := ""
 			if ssmPath != "" && ssmClient != nil {
-				roleARN, err = ssmClient.GetSecret(ctx, ssmPath)
+				credentialsJSON, err = ssmClient.GetSecret(ctx, ssmPath)
 				if err != nil {
-					log.Printf("Failed to get AWS Role ARN from SSM for %s: %v", accountName, err)
+					log.Printf("Failed to get AWS credentials JSON from SSM for %s: %v", accountName, err)
 					continue
 				}
 			}
@@ -93,7 +93,7 @@ func runSyncForRange(ctx context.Context, db *database.DB, ssmClient *aws.SSMCli
 			if tagKey == "" {
 				tagKey = "Project"
 			}
-			records, err = awsF.FetchCost(ctx, awsRegion, roleARN, tagKey, start, end)
+			records, err = awsF.FetchCost(ctx, awsRegion, credentialsJSON, tagKey, start, end)
 
 		} else if provider == "gcp" {
 			if ssmPath == "" || ssmClient == nil {
@@ -181,10 +181,10 @@ func runSyncForRange(ctx context.Context, db *database.DB, ssmClient *aws.SSMCli
 				if err == nil {
 					// We only alert if it crosses the threshold today.
 					// This is a bit tricky to do perfectly without tracking "last alerted percentage",
-					// but for now we just alert if the total is in the range. 
+					// but for now we just alert if the total is in the range.
 					// To avoid spamming, we could check if yesterday's total was below and today's is above.
 					// For simplicity, we just alert if today's fetch pushed it over a milestone.
-					
+
 					yesterdayTotal := monthTotal - dayTotal
 					milestones := []float64{0.5, 0.8, 1.0}
 					for _, m := range milestones {

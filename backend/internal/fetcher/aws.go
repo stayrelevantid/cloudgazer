@@ -2,16 +2,16 @@ package fetcher
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	ceTypes "github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
-	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
 
 // CostRecord represents a simplified daily cost grouped by service and tag
@@ -30,18 +30,25 @@ func NewAWSFetcher() *AWSFetcher {
 }
 
 // FetchCost pulls the cost from a date range grouped by SERVICE (and optionally TAG).
-// If roleARN is not empty, it assumes that role first.
-func (f *AWSFetcher) FetchCost(ctx context.Context, region, roleARN, tagKey string, start, end time.Time) ([]CostRecord, error) {
+// If credentialsJSON is not empty, it parses it and uses it for authentication.
+func (f *AWSFetcher) FetchCost(ctx context.Context, region, credentialsJSON, tagKey string, start, end time.Time) ([]CostRecord, error) {
 	// Load default config (based on environment / SSM logic)
 	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
 	if err != nil {
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)
 	}
 
-	// Assume Role if provided
-	if roleARN != "" {
-		stsClient := sts.NewFromConfig(cfg)
-		provider := stscreds.NewAssumeRoleProvider(stsClient, roleARN)
+	// Use Static Credentials if provided via JSON
+	if credentialsJSON != "" {
+		var creds struct {
+			AccessKeyId     string `json:"AccessKeyId"`
+			SecretAccessKey string `json:"SecretAccessKey"`
+		}
+		if err := json.Unmarshal([]byte(credentialsJSON), &creds); err != nil {
+			return nil, fmt.Errorf("failed to parse AWS credentials JSON: %w", err)
+		}
+
+		provider := credentials.NewStaticCredentialsProvider(creds.AccessKeyId, creds.SecretAccessKey, "")
 		cfg.Credentials = aws.NewCredentialsCache(provider)
 	}
 
@@ -88,12 +95,12 @@ func (f *AWSFetcher) FetchCost(ctx context.Context, region, roleARN, tagKey stri
 			if len(group.Keys) == 0 {
 				continue
 			}
-			
+
 			serviceName := group.Keys[0]
 			tagName := "untagged"
 			if len(group.Keys) > 1 {
 				tagName = group.Keys[1]
-				// AWS tags often come back as "Key$Value" or just "Value" depending on version, 
+				// AWS tags often come back as "Key$Value" or just "Value" depending on version,
 				// but in Filter/GroupBy it's usually just the value.
 				if strings.Contains(tagName, "$") {
 					parts := strings.SplitN(tagName, "$", 2)

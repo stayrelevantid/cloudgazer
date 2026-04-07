@@ -517,7 +517,7 @@ func main() {
 		}
 		fmt.Fprintf(w, `{"forecasting":%s}`, toJSON(forecasts))
 	})
-	
+
 	// ── ADVANCED REPORTS ──────────────────────────────────────────
 	mux.HandleFunc("/api/reports/advanced", func(w http.ResponseWriter, r *http.Request) {
 		jsonHeader(w)
@@ -530,9 +530,9 @@ func main() {
 			return
 		}
 
-		timeRange := r.URL.Query().Get("range")       // 7d, 30d, 90d, 180d, 365d
+		timeRange := r.URL.Query().Get("range")         // 7d, 30d, 90d, 180d, 365d
 		granularity := r.URL.Query().Get("granularity") // day, week, month
-		groupBy := r.URL.Query().Get("group_by")      // provider, account, tag
+		groupBy := r.URL.Query().Get("group_by")        // provider, account, tag
 
 		trunc := "day"
 		switch granularity {
@@ -663,17 +663,17 @@ func main() {
 		if provider != "" {
 			whereClause += fmt.Sprintf(" AND ca.provider = '%s'", provider)
 		}
-		
+
 		tagParam := r.URL.Query().Get("tag")
 		if tagParam != "" && tagParam != "all" {
 			whereClause += fmt.Sprintf(" AND cr.tag_name = '%s'", tagParam)
 		}
 
 		groupBy := r.URL.Query().Get("group_by")
-		
+
 		selectFields := "ca.account_name, ca.provider, cr.service_name, cr.resource_name, cr.tag_name, SUM(cr.amount_usd) as total_usd"
 		groupByFields := "1, 2, 3, 4, 5"
-		
+
 		if groupBy == "tag" {
 			selectFields = "'Multiple Accounts' as account_name, 'all' as provider, 'Multiple Services' as service_name, '[Grouped Resources]' as resource_name, cr.tag_name, SUM(cr.amount_usd) as total_usd"
 			groupByFields = "cr.tag_name"
@@ -728,7 +728,7 @@ func main() {
 
 		// Pull based on range and granularity
 		// Pull based on range and granularity
-		timeRange := r.URL.Query().Get("range")       // 7d, 30d, etc.
+		timeRange := r.URL.Query().Get("range")         // 7d, 30d, etc.
 		granularity := r.URL.Query().Get("granularity") // day, week, month
 		if granularity == "" {
 			granularity = "month"
@@ -890,14 +890,14 @@ func main() {
 			defer rows.Close()
 
 			type AlertRow struct {
-				ID             string  `json:"id"`
-				AccountID      string  `json:"account_id"`
-				AccountName    string  `json:"account_name"`
-				Provider       string  `json:"provider"`
-				Channel        string  `json:"channel"`
-				WebhookURL     string  `json:"webhook_url"`
+				ID              string  `json:"id"`
+				AccountID       string  `json:"account_id"`
+				AccountName     string  `json:"account_name"`
+				Provider        string  `json:"provider"`
+				Channel         string  `json:"channel"`
+				WebhookURL      string  `json:"webhook_url"`
 				WeeklyThreshold float64 `json:"weekly_threshold"`
-				IsActive       bool    `json:"is_active"`
+				IsActive        bool    `json:"is_active"`
 			}
 			alerts := []AlertRow{}
 			for rows.Next() {
@@ -1094,7 +1094,7 @@ func main() {
 		if provider != "" {
 			whereClause += fmt.Sprintf(" AND ca.provider = '%s'", provider)
 		}
-		
+
 		tagParam := r.URL.Query().Get("tag")
 		if tagParam != "" && tagParam != "all" {
 			whereClause += fmt.Sprintf(" AND cr.tag_name = '%s'", tagParam)
@@ -1144,7 +1144,7 @@ func main() {
 				continue
 			}
 			// Use simple comma separation, ensuring strings with commas are quoted
-			fmt.Fprintf(w, "%s,\"%s\",%s,\"%s\",\"%s\",\"%s\",%.2f,%v\n", 
+			fmt.Fprintf(w, "%s,\"%s\",%s,\"%s\",\"%s\",\"%s\",%.2f,%v\n",
 				date, account, provider, service, resource, tag, amount, anomaly)
 		}
 	})

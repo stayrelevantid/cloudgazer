@@ -27,7 +27,7 @@ func main() {
 
 	// 1. Delete associated data first to avoid FK constraints
 	log.Println("Cleaning up reports and configs associated with mock accounts...")
-	
+
 	// Delete Alert Configs for Mock Accounts
 	res, err := conn.Exec(ctx, "DELETE FROM alert_configs WHERE account_id IN (SELECT id FROM cloud_accounts WHERE aws_ssm_path LIKE 'TEST_MOCK_%')")
 	if err != nil {
