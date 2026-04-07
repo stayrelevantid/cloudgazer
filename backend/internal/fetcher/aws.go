@@ -73,6 +73,10 @@ func (f *AWSFetcher) FetchCost(ctx context.Context, region, credentialsJSON, tag
 					Type: ceTypes.GroupDefinitionTypeDimension,
 					Key:  aws.String("SERVICE"),
 				},
+				{
+					Type: ceTypes.GroupDefinitionTypeDimension,
+					Key:  aws.String("USAGE_TYPE"),
+				},
 			},
 			NextPageToken: nextToken,
 		}
@@ -110,11 +114,15 @@ func (f *AWSFetcher) FetchCost(ctx context.Context, region, credentialsJSON, tag
 			}
 
 			serviceName := group.Keys[0]
+			resourceName := serviceName // Default to service name if no USAGE_TYPE
 			tagName := "untagged"
+
 			if len(group.Keys) > 1 {
-				tagName = group.Keys[1]
-				// AWS tags often come back as "Key$Value" or just "Value" depending on version,
-				// but in Filter/GroupBy it's usually just the value.
+				resourceName = group.Keys[1] // Second key is USAGE_TYPE
+			}
+
+			if len(group.Keys) > 2 {
+				tagName = group.Keys[2] // Third key is the Tag
 				if strings.Contains(tagName, "$") {
 					parts := strings.SplitN(tagName, "$", 2)
 					tagName = parts[1]
@@ -132,7 +140,7 @@ func (f *AWSFetcher) FetchCost(ctx context.Context, region, credentialsJSON, tag
 			records = append(records, CostRecord{
 				Date:         recordDate,
 				ServiceName:  serviceName,
-				ResourceName: serviceName, // Default to service name for now
+				ResourceName: resourceName,
 				TagName:      tagName,
 				AmountUSD:    amount,
 			})
