@@ -40,9 +40,9 @@ Prepare your cloud providers for read-only access. Follow the [Manual Setup Guid
 ## ⚙️ Phase 3: Application Integration
 Add the real accounts via the CloudGazer dashboard.
 
-- [ ] Navigate to **Accounts** page.
-- [ ] **Add Account**: Use the exact SSM Path from Phase 2.
-- [ ] Verify status is **Active**.
+- [x] Navigate to **Accounts** page.
+- [x] **Add Account**: Use the exact SSM Path from Phase 2.
+- [x] Verify status is **Active**.
 
 ---
 
