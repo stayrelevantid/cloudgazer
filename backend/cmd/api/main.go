@@ -68,6 +68,31 @@ func main() {
 		w.Write([]byte(`{"status":"UP"}`))
 	})
 
+	// ── SSM Diagnostic ──────────────────────────────────────────────────
+	mux.HandleFunc("/api/diag/ssm-test", func(w http.ResponseWriter, r *http.Request) {
+		jsonHeader(w)
+		if ssmClient == nil {
+			http.Error(w, `{"status":"error","message":"SSM Client not initialized"}`, http.StatusInternalServerError)
+			return
+		}
+
+		path := r.URL.Query().Get("path")
+		if path == "" {
+			path = "/cloudgazer/aws-credentials" // Default test path from docs
+		}
+
+		val, err := ssmClient.GetSecret(r.Context(), path)
+		if err != nil {
+			log.Printf("Diag: Failed to fetch %s: %v", path, err)
+			w.WriteHeader(http.StatusUnauthorized)
+			fmt.Fprintf(w, `{"status":"error","path":"%s","message":"%s"}`, path, err.Error())
+			return
+		}
+
+		// We don't return the value for security, just success and a snippet length
+		w.Write([]byte(fmt.Sprintf(`{"status":"success","path":"%s","length":%d}`, path, len(val))))
+	})
+
 	// ── Cron Trigger ────────────────────────────────────────────────────
 	mux.HandleFunc("/api/cron/fetch", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
