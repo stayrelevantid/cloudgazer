@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { API_BASE } from "@/lib/config";
 import {
     Area,
     AreaChart,
@@ -37,7 +38,6 @@ import {
     DropdownMenuGroup,
 } from "@/components/ui/dropdown-menu";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
 type ReportRow = { period: string; group_name: string; total_usd: number };
 type ChartPoint = { date: string; [key: string]: string | number };
