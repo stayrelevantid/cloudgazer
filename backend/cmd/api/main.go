@@ -37,6 +37,14 @@ func getUserID(r *http.Request) string {
 	return claims.Subject
 }
 
+func ensureUser(ctx context.Context, db *database.DB, userID string) error {
+	if userID == "" {
+		return fmt.Errorf("empty userID")
+	}
+	_, err := db.Pool.Exec(ctx, "INSERT INTO users (id, email) VALUES ($1, $1) ON CONFLICT DO NOTHING", userID)
+	return err
+}
+
 func main() {
 	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file found, relying on environment variables")
@@ -129,6 +137,15 @@ func main() {
 			return
 		}
 		userID := getUserID(r)
+		if userID == "" {
+			log.Println("Auth failed: No userID in context")
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if err := ensureUser(r.Context(), db, userID); err != nil {
+			log.Printf("Failed to ensure user %s: %v", userID, err)
+		}
+
 		if err := cron.RunDailyFetch(r.Context(), db, ssmClient, awsRegion, userID); err != nil {
 			log.Printf("Cron fetch error: %v", err)
 			http.Error(w, "Fetch failed", http.StatusInternalServerError)
@@ -142,6 +159,11 @@ func main() {
 	mux.Handle("/api/accounts", clerkhttp.RequireHeaderAuthorization()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		jsonHeader(w)
 		userID := getUserID(r)
+		if userID == "" {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized); return
+		}
+		ensureUser(r.Context(), db, userID)
+
 		if r.Method == http.MethodGet {
 			rows, err := db.Pool.Query(r.Context(), "SELECT id, user_id, provider, account_name, aws_ssm_path, is_active FROM cloud_accounts WHERE user_id = $1 ORDER BY account_name", userID)
 			if err != nil {
@@ -165,9 +187,14 @@ func main() {
 		}
 		if r.Method == http.MethodPost {
 			var body struct { Provider string `json:"provider"`; AccountName string `json:"account_name"`; SSMPath string `json:"aws_ssm_path"` }
-			json.NewDecoder(r.Body).Decode(&body)
-			db.Pool.Exec(r.Context(), "INSERT INTO users (id, email) VALUES ($1, $1) ON CONFLICT DO NOTHING", userID)
-			db.Pool.Exec(r.Context(), "INSERT INTO cloud_accounts (user_id, provider, account_name, aws_ssm_path, is_active) VALUES ($1, $2, $3, $4, true)", userID, body.Provider, body.AccountName, body.SSMPath)
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				http.Error(w, "Invalid body", 400); return
+			}
+			_, err := db.Pool.Exec(r.Context(), "INSERT INTO cloud_accounts (user_id, provider, account_name, aws_ssm_path, is_active) VALUES ($1, $2, $3, $4, true)", userID, body.Provider, body.AccountName, body.SSMPath)
+			if err != nil {
+				log.Printf("Failed to create account: %v", err)
+				http.Error(w, "Database error", 500); return
+			}
 			w.WriteHeader(http.StatusOK); w.Write([]byte(`{"status":"success"}`)); return
 		}
 		if r.Method == http.MethodDelete {
@@ -197,9 +224,11 @@ func main() {
 	// Reports - Summary
 	mux.Handle("/api/reports", clerkhttp.RequireHeaderAuthorization()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		jsonHeader(w); userID := getUserID(r); days := r.URL.Query().Get("days")
+		if userID == "" { http.Error(w, "Unauthorized", 401); return }
+		ensureUser(r.Context(), db, userID)
 		if days == "" { days = "30" }
 		rows, err := db.Pool.Query(r.Context(), "SELECT cr.record_date::text, ca.provider, SUM(cr.amount_usd) FROM cost_reports cr JOIN cloud_accounts ca ON ca.id = cr.account_id WHERE ca.user_id = $1 AND cr.record_date >= NOW() - ($2 || ' days')::interval GROUP BY 1, 2 ORDER BY 1 ASC", userID, days)
-		if err != nil { http.Error(w, "Query failed", 500); return }
+		if err != nil { log.Printf("Reports query error: %v", err); http.Error(w, "Query failed", 500); return }
 		defer rows.Close()
 		type Row struct { Date string `json:"date"`; Provider string `json:"provider"`; TotalUSD float64 `json:"total_usd"` }
 		var res []Row
@@ -212,19 +241,36 @@ func main() {
 	// Reports - Services
 	mux.Handle("/api/reports/services", clerkhttp.RequireHeaderAuthorization()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		jsonHeader(w); userID := getUserID(r); timeframe := r.URL.Query().Get("range")
-		where := fmt.Sprintf("ca.user_id = '%s'", userID)
-		switch timeframe {
-		case "today": where += " AND cr.record_date >= CURRENT_DATE"
-		case "7d": where += " AND cr.record_date >= CURRENT_DATE - INTERVAL '6 days'"
-		case "30d": where += " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)"
-		default: where += " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)"
-		}
-		accountID := r.URL.Query().Get("account_id")
-		if accountID != "" { where += fmt.Sprintf(" AND cr.account_id = '%s'", accountID) }
-		tag := r.URL.Query().Get("tag")
-		if tag != "" && tag != "all" { where += fmt.Sprintf(" AND cr.tag_name = '%s'", tag) }
+		if userID == "" { http.Error(w, "Unauthorized", 401); return }
+		ensureUser(r.Context(), db, userID)
 		
-		rows, _ := db.Pool.Query(r.Context(), fmt.Sprintf("SELECT ca.account_name, ca.provider, cr.service_name, SUM(cr.amount_usd) FROM cost_reports cr JOIN cloud_accounts ca ON ca.id = cr.account_id WHERE %s GROUP BY 1, 2, 3 ORDER BY 4 DESC", where))
+		query := "SELECT ca.account_name, ca.provider, cr.service_name, SUM(cr.amount_usd) FROM cost_reports cr JOIN cloud_accounts ca ON ca.id = cr.account_id WHERE ca.user_id = $1"
+		args := []interface{}{userID}
+		
+		switch timeframe {
+		case "today": query += " AND cr.record_date >= CURRENT_DATE"
+		case "7d": query += " AND cr.record_date >= CURRENT_DATE - INTERVAL '6 days'"
+		case "30d": query += " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)"
+		default: query += " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)"
+		}
+		
+		accountID := r.URL.Query().Get("account_id")
+		if accountID != "" {
+			query += fmt.Sprintf(" AND cr.account_id = $%d", len(args)+1)
+			args = append(args, accountID)
+		}
+		tag := r.URL.Query().Get("tag")
+		if tag != "" && tag != "all" {
+			query += fmt.Sprintf(" AND cr.tag_name = $%d", len(args)+1)
+			args = append(args, tag)
+		}
+		
+		query += " GROUP BY 1, 2, 3 ORDER BY 4 DESC"
+		rows, err := db.Pool.Query(r.Context(), query, args...)
+		if err != nil {
+			log.Printf("Services query error: %v", err)
+			http.Error(w, "Query failed", 500); return
+		}
 		defer rows.Close()
 		type Row struct { AccountName string `json:"account_name"`; Provider string `json:"provider"`; ServiceName string `json:"service_name"`; TotalUSD float64 `json:"total_usd"` }
 		var res []Row
@@ -237,14 +283,25 @@ func main() {
 	// Comparison
 	mux.Handle("/api/reports/comparison", clerkhttp.RequireHeaderAuthorization()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		jsonHeader(w); userID := getUserID(r)
-		extra := fmt.Sprintf(" AND ca.user_id = '%s'", userID)
-		accountID := r.URL.Query().Get("account_id")
-		if accountID != "" { extra += fmt.Sprintf(" AND cr.account_id = '%s'", accountID) }
+		if userID == "" { http.Error(w, "Unauthorized", 401); return }
+		ensureUser(r.Context(), db, userID)
 		
-		rows, _ := db.Pool.Query(r.Context(), fmt.Sprintf(`
+		args := []interface{}{userID}
+		extra := " AND ca.user_id = $1"
+		accountID := r.URL.Query().Get("account_id")
+		if accountID != "" {
+			extra += " AND cr.account_id = $2"
+			args = append(args, accountID)
+		}
+		
+		rows, err := db.Pool.Query(r.Context(), fmt.Sprintf(`
 			WITH ranges AS (SELECT DATE_TRUNC('month', CURRENT_DATE) as cur_s, DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month') as prev_s, DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 second' as prev_e),
 			data AS (SELECT cr.service_name, ca.provider, SUM(CASE WHEN cr.record_date >= r.cur_s THEN cr.amount_usd ELSE 0 END) as cur, SUM(CASE WHEN cr.record_date >= r.prev_s AND cr.record_date <= r.prev_e THEN cr.amount_usd ELSE 0 END) as prev FROM cost_reports cr JOIN cloud_accounts ca ON ca.id = cr.account_id CROSS JOIN ranges r WHERE cr.record_date >= r.prev_s %s GROUP BY 1, 2)
-			SELECT service_name, provider, cur, prev, (cur - prev), CASE WHEN prev = 0 THEN 100 ELSE ((cur-prev)/prev)*100 END as pct FROM data WHERE cur > 0 OR prev > 0 ORDER BY cur DESC`, extra))
+			SELECT service_name, provider, cur, prev, (cur - prev), CASE WHEN prev = 0 THEN 100 ELSE ((cur-prev)/prev)*100 END as pct FROM data WHERE cur > 0 OR prev > 0 ORDER BY cur DESC`, extra), args...)
+		if err != nil {
+			log.Printf("Comparison query error: %v", err)
+			http.Error(w, "Query failed", 500); return
+		}
 		defer rows.Close()
 		type Row struct { Service string `json:"service"`; Provider string `json:"provider"`; CurrentTotal float64 `json:"current_total"`; PrevTotal float64 `json:"prev_total"`; Delta float64 `json:"delta"`; DeltaPercent float64 `json:"delta_percent"` }
 		var res []Row
@@ -257,11 +314,17 @@ func main() {
 	// Forecasting
 	mux.Handle("/api/reports/forecasting", clerkhttp.RequireHeaderAuthorization()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		jsonHeader(w); userID := getUserID(r)
-		extra := fmt.Sprintf(" AND ca.user_id = '%s'", userID)
-		rows, _ := db.Pool.Query(r.Context(), fmt.Sprintf(`
-			WITH m_data AS (SELECT ca.provider, SUM(cr.amount_usd) as so_far, GREATEST(EXTRACT(DAY FROM CURRENT_DATE), 1) as elapsed, EXTRACT(DAY FROM (DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month' - INTERVAL '1 day')) as total FROM cost_reports cr JOIN cloud_accounts ca ON ca.id = cr.account_id WHERE cr.record_date >= DATE_TRUNC('month', CURRENT_DATE) %s GROUP BY 1),
-			b_data AS (SELECT ca.provider, SUM(COALESCE(b.amount, 0)) as budget FROM cloud_accounts ca LEFT JOIN budgets b ON b.account_id = ca.id AND b.is_active = true WHERE ca.user_id = '%s' GROUP BY 1)
-			SELECT m.provider, m.so_far, (m.so_far/m.elapsed)*m.total, COALESCE(b.budget, 0) FROM m_data m LEFT JOIN b_data b ON b.provider = m.provider`, extra, userID))
+		if userID == "" { http.Error(w, "Unauthorized", 401); return }
+		ensureUser(r.Context(), db, userID)
+		
+		rows, err := db.Pool.Query(r.Context(), `
+			WITH m_data AS (SELECT ca.provider, SUM(cr.amount_usd) as so_far, GREATEST(EXTRACT(DAY FROM CURRENT_DATE), 1) as elapsed, EXTRACT(DAY FROM (DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month' - INTERVAL '1 day')) as total FROM cost_reports cr JOIN cloud_accounts ca ON ca.id = cr.account_id WHERE cr.record_date >= DATE_TRUNC('month', CURRENT_DATE) AND ca.user_id = $1 GROUP BY 1),
+			b_data AS (SELECT ca.provider, SUM(COALESCE(b.amount, 0)) as budget FROM cloud_accounts ca LEFT JOIN budgets b ON b.account_id = ca.id AND b.is_active = true WHERE ca.user_id = $2 GROUP BY 1)
+			SELECT m.provider, m.so_far, (m.so_far/m.elapsed)*m.total, COALESCE(b.budget, 0) FROM m_data m LEFT JOIN b_data b ON b.provider = m.provider`, userID, userID)
+		if err != nil {
+			log.Printf("Forecasting query error: %v", err)
+			http.Error(w, "Query failed", 500); return
+		}
 		defer rows.Close()
 		type Row struct { Provider string `json:"provider"`; TotalSoFar float64 `json:"total_so_far"`; ProjectedTotal float64 `json:"project_total"`; Budget float64 `json:"budget"` }
 		var res []Row
@@ -274,16 +337,26 @@ func main() {
 	// Advanced
 	mux.Handle("/api/reports/advanced", clerkhttp.RequireHeaderAuthorization()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		jsonHeader(w); userID := getUserID(r)
+		if userID == "" { http.Error(w, "Unauthorized", 401); return }
+		ensureUser(r.Context(), db, userID)
+		
 		tr := r.URL.Query().Get("range"); gr := r.URL.Query().Get("granularity"); gb := r.URL.Query().Get("group_by")
 		trunc := "day"; if gr == "week" || gr == "month" { trunc = gr }
 		fld := "'Total'"; switch gb { case "account": fld = "ca.account_name"; case "service": fld = "cr.service_name"; case "provider": fld = "ca.provider"; case "tag": fld = "cr.tag_name" }
-		where := fmt.Sprintf("ca.user_id = '%s'", userID)
+		
+		query := fmt.Sprintf("SELECT DATE_TRUNC('%s', cr.record_date)::text, %s, SUM(cr.amount_usd) FROM cost_reports cr JOIN cloud_accounts ca ON ca.id = cr.account_id WHERE ca.user_id = $1", trunc, fld)
 		switch tr {
-		case "7d": where += " AND cr.record_date >= CURRENT_DATE - INTERVAL '6 days'"
-		case "30d": where += " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)"
-		default: where += " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)"
+		case "7d": query += " AND cr.record_date >= CURRENT_DATE - INTERVAL '6 days'"
+		case "30d": query += " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)"
+		default: query += " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)"
 		}
-		rows, _ := db.Pool.Query(r.Context(), fmt.Sprintf("SELECT DATE_TRUNC('%s', cr.record_date)::text, %s, SUM(cr.amount_usd) FROM cost_reports cr JOIN cloud_accounts ca ON ca.id = cr.account_id WHERE %s GROUP BY 1, 2 ORDER BY 1 ASC", trunc, fld, where))
+		query += " GROUP BY 1, 2 ORDER BY 1 ASC"
+		
+		rows, err := db.Pool.Query(r.Context(), query, userID)
+		if err != nil {
+			log.Printf("Advanced query error: %v", err)
+			http.Error(w, "Query failed", 500); return
+		}
 		defer rows.Close()
 		type Row struct { Period string `json:"period"`; GroupName string `json:"group_name"`; TotalUSD float64 `json:"total_usd"` }
 		var res []Row
@@ -296,9 +369,18 @@ func main() {
 	// Resources
 	mux.Handle("/api/reports/resources", clerkhttp.RequireHeaderAuthorization()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		jsonHeader(w); userID := getUserID(r); tr := r.URL.Query().Get("range")
-		where := fmt.Sprintf("ca.user_id = '%s'", userID)
-		switch tr { case "7d": where += " AND cr.record_date >= CURRENT_DATE - INTERVAL '6 days'"; default: where += " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)" }
-		rows, _ := db.Pool.Query(r.Context(), fmt.Sprintf("SELECT ca.account_name, ca.provider, cr.service_name, cr.resource_name, cr.tag_name, SUM(cr.amount_usd) FROM cost_reports cr JOIN cloud_accounts ca ON ca.id = cr.account_id WHERE %s GROUP BY 1,2,3,4,5 ORDER BY 6 DESC", where))
+		if userID == "" { http.Error(w, "Unauthorized", 401); return }
+		ensureUser(r.Context(), db, userID)
+		
+		query := "SELECT ca.account_name, ca.provider, cr.service_name, cr.resource_name, cr.tag_name, SUM(cr.amount_usd) FROM cost_reports cr JOIN cloud_accounts ca ON ca.id = cr.account_id WHERE ca.user_id = $1"
+		switch tr { case "7d": query += " AND cr.record_date >= CURRENT_DATE - INTERVAL '6 days'"; default: query += " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)" }
+		query += " GROUP BY 1,2,3,4,5 ORDER BY 6 DESC"
+		
+		rows, err := db.Pool.Query(r.Context(), query, userID)
+		if err != nil {
+			log.Printf("Resources query error: %v", err)
+			http.Error(w, "Query failed", 500); return
+		}
 		defer rows.Close()
 		type Row struct { AccountName string `json:"account_name"`; Provider string `json:"provider"`; ServiceName string `json:"service_name"`; ResourceName string `json:"resource_name"`; TagName string `json:"tag_name"`; TotalUSD float64 `json:"total_usd"` }
 		var res []Row
