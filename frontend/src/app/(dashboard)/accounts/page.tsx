@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { API_BASE } from "@/lib/config";
 import { Plus, Cloud, Trash2, AlertTriangle, History, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -32,7 +33,6 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
 type Account = {
     id: string;

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { API_BASE } from "@/lib/config";
 import { useCurrency } from "@/contexts/CurrencyContext";
 import { Plus, BellRing, Trash2, Send, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
@@ -33,7 +34,6 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
 type Account = {
     id: string;

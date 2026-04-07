@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { API_BASE } from "@/lib/config";
 import { useCurrency } from "@/contexts/CurrencyContext";
 import { Plus, Wallet, Trash2, AlertCircle, Percent, Pencil } from "lucide-react";
 import { toast } from "sonner";
@@ -46,7 +47,6 @@ import {
     AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
 type Budget = {
     id: string;
