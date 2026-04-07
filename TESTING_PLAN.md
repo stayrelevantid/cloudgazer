@@ -22,7 +22,7 @@ Clean up all dummy/mock data before adding real accounts.
 ---
 
 ## 🔑 Phase 2: Cloud Credential Setup
-Prepare your cloud providers for read-only access.
+Prepare your cloud providers for read-only access. Follow the [Manual Setup Guide](file:///Users/muhammad.indragiri/Kerja/cloudgazer/docs/CLOUD_SETUP.md) for detailed steps.
 
 ### AWS (Cross-Account Role)
 - [ ] Create IAM Role with `ReadOnlyAccess` in the target account.
