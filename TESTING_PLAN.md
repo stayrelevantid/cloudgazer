@@ -1,8 +1,15 @@
-# 🧪 CloudGazer Real-World Testing Plan
+---
 
-This document serves as a checklist and guide for transitioning from development/mock data to real-world cloud monitoring.
+## ⚙️ Phase 0: Backend Infrastructure Setup (AWS)
+Before monitoring any accounts, the CloudGazer backend itself must be configured with access to the AWS Parameter Store.
 
-## 🏁 Phase 1: Database Cleanup
+- [ ] **Create Primary IAM User**: Create a `cloudgazer-backend` user with restricted SSM access in your primary AWS account.
+- [ ] **Configure Koyeb**: Add the Access Keys and Region as environment variables in the Koyeb dashboard.
+- [ ] **Verify Connection**: Ensure the backend logs "Successfully initialized AWS SSM Client" on startup.
+
+---
+
+## 🔑 Phase 1: Database Cleanup
 Clean up all dummy/mock data before adding real accounts.
 
 - [ ] **Stop Backend Server**: Ensure no active processes are writing to the DB.

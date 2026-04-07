@@ -3,13 +3,61 @@
 This guide provides step-by-step instructions for setting up dedicated, read-only access for CloudGazer in AWS and GCP.
 
 ## 🔐 Security Principle
-We use the **Principle of Least Privilege**. CloudGazer only requires **Read-Only** access to view your resource usage and billing data.
+We use the **Principle of Least Privilege**. CloudGazer only requires the minimum permissions necessary to view your resource usage and billing data.
 
 ---
 
-## 🟠 AWS Setup (IAM User with JSON Key)
+## 🟠 Phase 0: Backend Infrastructure Setup (AWS)
 
-We will create a dedicated IAM User and store its programmatic access keys in AWS SSM as a JSON block, similar to a GCP Service Account.
+Before adding accounts to the dashboard, the CloudGazer backend (running on Koyeb) needs a **Primary IAM User** with permission to read secrets from your AWS Parameter Store.
+
+### 1. Create a Primary IAM Policy
+1. Log in to your **Primary AWS Account** IAM Console.
+2. Go to **Policies** -> **Create policy**.
+3. Select the **JSON** tab and paste the following policy (restricted to SSM):
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "ssm:GetParameter",
+                "ssm:GetParameters",
+                "ssm:GetParametersByPath"
+            ],
+            "Resource": "arn:aws:ssm:*:*:parameter/cloudgazer/*"
+        }
+    ]
+}
+```
+4. Click **Next**, name it `CloudGazerBackendAccess`, and click **Create policy**.
+
+### 2. Create the Primary IAM User
+1. In the IAM Console, go to **Users** -> **Create user**.
+2. **User name**: `cloudgazer-backend`.
+3. Do **not** check the box for AWS Management Console access. Click **Next**.
+4. Select **Attach policies directly**.
+5. Search for and select the `CloudGazerBackendAccess` policy you created in Step 1.
+6. Click **Next** and then **Create user**.
+
+### 3. Set Koyeb Environment Variables
+1. Click on the newly created `cloudgazer-backend` user.
+2. Go to the **Security credentials** tab.
+3. Scroll down to **Access keys** and click **Create access key**.
+4. Select **Application running outside AWS** and click **Next**.
+5. Click **Create access key**.
+6. **IMPORTANT**: Copy the **Access Key ID** and **Secret Access Key**.
+7. In your **Koyeb Dashboard**, add these as environment variables:
+   - `AWS_ACCESS_KEY_ID`: [Your Access Key ID]
+   - `AWS_SECRET_ACCESS_KEY`: [Your Secret Access Key]
+   - `AWS_REGION`: [Your AWS Region, e.g., ap-southeast-1]
+
+---
+
+## 🟠 Phase 1: Target Cloud Account Setup (Monitored Account)
+
+This step is for the accounts you want to monitor. You will store their credentials in the Parameter Store.
 
 ### 1. Create a Dedicated IAM Policy
 Instead of giving full `ReadOnlyAccess`, we will create a dedicated policy explicitly for CloudGazer.
