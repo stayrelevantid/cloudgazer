@@ -147,7 +147,9 @@ func main() {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
-		ensureUser(r.Context(), db, userID)
+		if err := ensureUser(r.Context(), db, userID); err != nil {
+			log.Printf("Failed to ensure user %s: %v", userID, err)
+		}
 
 		if err := cron.RunDailyFetch(r.Context(), db, ssmClient, awsRegion, userID); err != nil {
 			log.Printf("Cron fetch error: %v", err)
