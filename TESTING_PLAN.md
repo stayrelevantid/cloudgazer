@@ -26,7 +26,7 @@ Prepare your cloud providers for read-only access. Follow the [Manual Setup Guid
 
 ### AWS (Dedicated IAM User)
 - [ ] Create IAM Policy (`CloudGazerAccess`) with required permissions.
-- [ ] Create IAM User (`CloudGazerServiceUser`) and attach the policy.
+- [ ] Create IAM User (`cloudgazer-monitor`) and attach the policy.
 - [ ] Generate Programmatic Access Keys and structure them as a JSON object.
 - [ ] Save the JSON block in AWS SSM Parameter Store as `SecureString` (e.g., `/cloudgazer/aws-credentials`).
 

@@ -41,14 +41,14 @@ Instead of giving full `ReadOnlyAccess`, we will create a dedicated policy expli
 
 ### 2. Create the IAM User & Attach Policy
 1. In the IAM Console, go to **Users** -> **Create user**.
-2. **User name**: `CloudGazerServiceUser`.
+2. **User name**: `cloudgazer-monitor`.
 3. Do **not** check the box for AWS Management Console access (programmatic access only). Click **Next**.
 4. Select **Attach policies directly**.
 5. Search for and select the `CloudGazerAccess` policy you created in Step 1.
 6. Click **Next** and then **Create user**.
 
 ### 3. Generate Access Keys & Format as JSON
-1. Click on the newly created `CloudGazerServiceUser`.
+1. Click on the newly created `cloudgazer-monitor`.
 2. Go to the **Security credentials** tab.
 3. Scroll down to **Access keys** and click **Create access key**.
 4. Select **Application running outside AWS** (or Other), and click **Next**.
