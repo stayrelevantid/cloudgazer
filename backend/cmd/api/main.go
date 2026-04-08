@@ -151,7 +151,8 @@ func main() {
 			log.Printf("Failed to ensure user %s: %v", userID, err)
 		}
 
-		if err := cron.RunDailyFetch(r.Context(), db, ssmClient, awsRegion, userID); err != nil {
+		// For manual sync, we do 30 days historical to ensure dashboard is populated
+		if err := cron.RunHistoricalSync(r.Context(), db, ssmClient, awsRegion, "", 1, userID); err != nil {
 			log.Printf("Cron fetch error: %v", err)
 			http.Error(w, "Fetch failed", http.StatusInternalServerError)
 			return
@@ -467,6 +468,53 @@ func main() {
 			}
 			w.WriteHeader(200); return
 		}
+	})))
+
+	// Reports - Historical
+	mux.Handle("/api/reports/historical", clerkhttp.RequireHeaderAuthorization()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		userID := getUserID(r)
+		if userID == "" { http.Error(w, "Unauthorized", 401); return }
+		ensureUser(r.Context(), db, userID)
+		
+		rows, err := db.Pool.Query(r.Context(), `
+			SELECT DATE_TRUNC('month', cr.record_date)::text, SUM(cr.amount_usd) 
+			FROM cost_reports cr JOIN cloud_accounts ca ON ca.id = cr.account_id 
+			WHERE ca.user_id = $1 AND cr.record_date >= NOW() - INTERVAL '12 months'
+			GROUP BY 1 ORDER BY 1 DESC`, userID)
+		if err != nil { 
+			log.Printf("Historical query error: %v", err)
+			http.Error(w, "Query failed", 500); return 
+		}
+		defer rows.Close()
+		type Row struct { Period string `json:"period"`; TotalUSD float64 `json:"total_usd"` }
+		var res []Row
+		for rows.Next() {
+			var r Row; rows.Scan(&r.Period, &r.TotalUSD); res = append(res, r)
+		}
+		fmt.Fprintf(w, `{"historical":%s}`, toJSON(res))
+	})))
+
+	// Tags
+	mux.Handle("/api/tags", clerkhttp.RequireHeaderAuthorization()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		userID := getUserID(r)
+		if userID == "" { http.Error(w, "Unauthorized", 401); return }
+		ensureUser(r.Context(), db, userID)
+		
+		rows, err := db.Pool.Query(r.Context(), `
+			SELECT DISTINCT cr.tag_name 
+			FROM cost_reports cr JOIN cloud_accounts ca ON ca.id = cr.account_id 
+			WHERE ca.user_id = $1 AND cr.tag_name IS NOT NULL AND cr.tag_name != ''
+			ORDER BY 1`, userID)
+		if err != nil { 
+			log.Printf("Tags query error: %v", err)
+			http.Error(w, "Query failed", 500); return 
+		}
+		defer rows.Close()
+		tags := []string{}
+		for rows.Next() {
+			var t string; rows.Scan(&t); tags = append(tags, t)
+		}
+		fmt.Fprintf(w, `{"tags":%s}`, toJSON(tags))
 	})))
 
 	// Global Middleware
