@@ -258,9 +258,14 @@ func main() {
 		args := []interface{}{userID}
 		
 		switch timeframe {
-		case "today": query += " AND cr.record_date >= CURRENT_DATE"
+		case "today": query += " AND cr.record_date = CURRENT_DATE"
 		case "7d": query += " AND cr.record_date >= CURRENT_DATE - INTERVAL '6 days'"
 		case "30d": query += " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)"
+		case "90d": query += " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '2 months'"
+		case "180d": query += " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '5 months'"
+		case "365d": query += " AND cr.record_date >= DATE_TRUNC('year', CURRENT_DATE)"
+		case "last_year": query += " AND cr.record_date >= DATE_TRUNC('year', CURRENT_DATE - INTERVAL '1 year') AND cr.record_date < DATE_TRUNC('year', CURRENT_DATE)"
+		case "2y_ago": query += " AND cr.record_date >= DATE_TRUNC('year', CURRENT_DATE - INTERVAL '2 years') AND cr.record_date < DATE_TRUNC('year', CURRENT_DATE - INTERVAL '1 year')"
 		default: query += " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)"
 		}
 		
@@ -315,21 +320,29 @@ func main() {
 			args = append(args, provider)
 		}
 
-		rangesCTE := `SELECT DATE_TRUNC('month', CURRENT_DATE) as cur_s, DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month') as prev_s, DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 second' as prev_e`
+		rangesCTE := `SELECT DATE_TRUNC('month', CURRENT_DATE) as cur_s, CURRENT_DATE as cur_e, DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month') as prev_s, DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 day' as prev_e`
 		switch tr {
 		case "today":
-			rangesCTE = `SELECT CURRENT_DATE as cur_s, CURRENT_DATE - INTERVAL '1 day' as prev_s, CURRENT_DATE - INTERVAL '1 second' as prev_e`
+			rangesCTE = `SELECT CURRENT_DATE as cur_s, CURRENT_DATE as cur_e, CURRENT_DATE - INTERVAL '1 day' as prev_s, CURRENT_DATE - INTERVAL '1 day' as prev_e`
 		case "7d":
-			rangesCTE = `SELECT CURRENT_DATE - INTERVAL '6 days' as cur_s, CURRENT_DATE - INTERVAL '13 days' as prev_s, CURRENT_DATE - INTERVAL '7 days' + INTERVAL '23 hours 59 minutes 59 seconds' as prev_e`
+			rangesCTE = `SELECT CURRENT_DATE - INTERVAL '6 days' as cur_s, CURRENT_DATE as cur_e, CURRENT_DATE - INTERVAL '13 days' as prev_s, CURRENT_DATE - INTERVAL '7 days' as prev_e`
 		case "30d":
-			rangesCTE = `SELECT DATE_TRUNC('month', CURRENT_DATE) as cur_s, DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month') as prev_s, DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 second' as prev_e`
+			rangesCTE = `SELECT DATE_TRUNC('month', CURRENT_DATE) as cur_s, CURRENT_DATE as cur_e, DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month') as prev_s, DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 day' as prev_e`
+		case "90d":
+			rangesCTE = `SELECT DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '2 months' as cur_s, CURRENT_DATE as cur_e, DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '5 months' as prev_s, DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '2 months' - INTERVAL '1 day' as prev_e`
+		case "180d":
+			rangesCTE = `SELECT DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '5 months' as cur_s, CURRENT_DATE as cur_e, DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '11 months' as prev_s, DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '5 months' - INTERVAL '1 day' as prev_e`
 		case "365d":
-			rangesCTE = `SELECT DATE_TRUNC('year', CURRENT_DATE) as cur_s, DATE_TRUNC('year', CURRENT_DATE - INTERVAL '1 year') as prev_s, DATE_TRUNC('year', CURRENT_DATE) - INTERVAL '1 second' as prev_e`
+			rangesCTE = `SELECT DATE_TRUNC('year', CURRENT_DATE) as cur_s, CURRENT_DATE as cur_e, DATE_TRUNC('year', CURRENT_DATE - INTERVAL '1 year') as prev_s, DATE_TRUNC('year', CURRENT_DATE) - INTERVAL '1 day' as prev_e`
+		case "last_year":
+			rangesCTE = `SELECT DATE_TRUNC('year', CURRENT_DATE - INTERVAL '1 year') as cur_s, DATE_TRUNC('year', CURRENT_DATE) - INTERVAL '1 day' as cur_e, DATE_TRUNC('year', CURRENT_DATE - INTERVAL '2 years') as prev_s, DATE_TRUNC('year', CURRENT_DATE - INTERVAL '1 year') - INTERVAL '1 day' as prev_e`
+		case "2y_ago":
+			rangesCTE = `SELECT DATE_TRUNC('year', CURRENT_DATE - INTERVAL '2 years') as cur_s, DATE_TRUNC('year', CURRENT_DATE - INTERVAL '1 year') - INTERVAL '1 day' as cur_e, DATE_TRUNC('year', CURRENT_DATE - INTERVAL '3 years') as prev_s, DATE_TRUNC('year', CURRENT_DATE - INTERVAL '2 years') - INTERVAL '1 day' as prev_e`
 		}
 		
 		rows, err := db.Pool.Query(r.Context(), fmt.Sprintf(`
 			WITH ranges AS (%s),
-			data AS (SELECT cr.service_name, ca.provider, SUM(CASE WHEN cr.record_date >= r.cur_s THEN cr.amount_usd ELSE 0 END) as cur, SUM(CASE WHEN cr.record_date >= r.prev_s AND cr.record_date <= r.prev_e THEN cr.amount_usd ELSE 0 END) as prev FROM cost_reports cr JOIN cloud_accounts ca ON ca.id = cr.account_id CROSS JOIN ranges r WHERE ca.user_id = $1 AND cr.record_date >= r.prev_s %s GROUP BY 1, 2)
+			data AS (SELECT cr.service_name, ca.provider, SUM(CASE WHEN cr.record_date >= r.cur_s AND cr.record_date <= r.cur_e THEN cr.amount_usd ELSE 0 END) as cur, SUM(CASE WHEN cr.record_date >= r.prev_s AND cr.record_date <= r.prev_e THEN cr.amount_usd ELSE 0 END) as prev FROM cost_reports cr JOIN cloud_accounts ca ON ca.id = cr.account_id CROSS JOIN ranges r WHERE ca.user_id = $1 AND cr.record_date >= r.prev_s AND cr.record_date <= COALESCE(r.cur_e, CURRENT_DATE) %s GROUP BY 1, 2)
 			SELECT service_name, provider, cur, prev, (cur - prev), CASE WHEN prev = 0 THEN 100 ELSE ((cur-prev)/prev)*100 END as pct FROM data WHERE cur > 0 OR prev > 0 ORDER BY cur DESC`, rangesCTE, extra), args...)
 		if err != nil {
 			log.Printf("Comparison query error: %v", err)
@@ -405,8 +418,14 @@ func main() {
 		}
 
 		switch tr {
+		case "today": query += " AND cr.record_date = CURRENT_DATE"
 		case "7d": query += " AND cr.record_date >= CURRENT_DATE - INTERVAL '6 days'"
 		case "30d": query += " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)"
+		case "90d": query += " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '2 months'"
+		case "180d": query += " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '5 months'"
+		case "365d": query += " AND cr.record_date >= DATE_TRUNC('year', CURRENT_DATE)"
+		case "last_year": query += " AND cr.record_date >= DATE_TRUNC('year', CURRENT_DATE - INTERVAL '1 year') AND cr.record_date < DATE_TRUNC('year', CURRENT_DATE)"
+		case "2y_ago": query += " AND cr.record_date >= DATE_TRUNC('year', CURRENT_DATE - INTERVAL '2 years') AND cr.record_date < DATE_TRUNC('year', CURRENT_DATE - INTERVAL '1 year')"
 		default: query += " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)"
 		}
 		query += " GROUP BY 1, 2 ORDER BY 1 ASC"
@@ -450,7 +469,17 @@ func main() {
 			args = append(args, tag)
 		}
 
-		switch tr { case "7d": query += " AND cr.record_date >= CURRENT_DATE - INTERVAL '6 days'"; default: query += " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)" }
+		switch tr {
+		case "today": query += " AND cr.record_date = CURRENT_DATE"
+		case "7d": query += " AND cr.record_date >= CURRENT_DATE - INTERVAL '6 days'"
+		case "30d": query += " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)"
+		case "90d": query += " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '2 months'"
+		case "180d": query += " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '5 months'"
+		case "365d": query += " AND cr.record_date >= DATE_TRUNC('year', CURRENT_DATE)"
+		case "last_year": query += " AND cr.record_date >= DATE_TRUNC('year', CURRENT_DATE - INTERVAL '1 year') AND cr.record_date < DATE_TRUNC('year', CURRENT_DATE)"
+		case "2y_ago": query += " AND cr.record_date >= DATE_TRUNC('year', CURRENT_DATE - INTERVAL '2 years') AND cr.record_date < DATE_TRUNC('year', CURRENT_DATE - INTERVAL '1 year')"
+		default: query += " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)"
+		}
 		query += " GROUP BY 1,2,3,4,5 ORDER BY 6 DESC"
 		
 		rows, err := db.Pool.Query(r.Context(), query, args...)
@@ -564,20 +593,24 @@ func main() {
 			args = append(args, provider)
 		}
 
-		interval := "12 months"
 		trunc := "month"
+		dateCondition := "AND cr.record_date >= DATE_TRUNC('year', CURRENT_DATE)"
 		switch tr {
-		case "today": interval = "2 day"; trunc = "day"
-		case "7d": interval = "7 days"; trunc = "day"
-		case "30d": interval = "30 days"; trunc = "day"
-		case "90d": interval = "3 months"; trunc = "week"
+		case "today": dateCondition = "AND cr.record_date = CURRENT_DATE"; trunc = "day"
+		case "7d": dateCondition = "AND cr.record_date >= CURRENT_DATE - INTERVAL '6 days'"; trunc = "day"
+		case "30d": dateCondition = "AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)"; trunc = "day"
+		case "90d": dateCondition = "AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '2 months'"; trunc = "week"
+		case "180d": dateCondition = "AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '5 months'"; trunc = "month"
+		case "365d": dateCondition = "AND cr.record_date >= DATE_TRUNC('year', CURRENT_DATE)"; trunc = "month"
+		case "last_year": dateCondition = "AND cr.record_date >= DATE_TRUNC('year', CURRENT_DATE - INTERVAL '1 year') AND cr.record_date < DATE_TRUNC('year', CURRENT_DATE)"; trunc = "month"
+		case "2y_ago": dateCondition = "AND cr.record_date >= DATE_TRUNC('year', CURRENT_DATE - INTERVAL '2 years') AND cr.record_date < DATE_TRUNC('year', CURRENT_DATE - INTERVAL '1 year')"; trunc = "month"
 		}
 
 		rows, err := db.Pool.Query(r.Context(), fmt.Sprintf(`
 			SELECT DATE_TRUNC('%s', cr.record_date)::text, SUM(cr.amount_usd) 
 			FROM cost_reports cr JOIN cloud_accounts ca ON ca.id = cr.account_id 
-			WHERE ca.user_id = $1 AND cr.record_date >= NOW() - INTERVAL '%s' %s
-			GROUP BY 1 ORDER BY 1 DESC`, trunc, interval, extra), args...)
+			WHERE ca.user_id = $1 %s %s
+			GROUP BY 1 ORDER BY 1 DESC`, trunc, dateCondition, extra), args...)
 		if err != nil { 
 			log.Printf("Historical query error: %v", err)
 			http.Error(w, "Query failed", 500); return 
