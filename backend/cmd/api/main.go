@@ -301,8 +301,9 @@ func main() {
 		if userID == "" { http.Error(w, "Unauthorized", 401); return }
 		ensureUser(r.Context(), db, userID)
 		
+		tr := r.URL.Query().Get("range")
 		args := []interface{}{userID}
-		extra := " AND ca.user_id = $1"
+		extra := ""
 		accountID := r.URL.Query().Get("account_id")
 		if accountID != "" {
 			extra += fmt.Sprintf(" AND cr.account_id = $%d", len(args)+1)
@@ -313,11 +314,23 @@ func main() {
 			extra += fmt.Sprintf(" AND ca.provider = $%d", len(args)+1)
 			args = append(args, provider)
 		}
+
+		rangesCTE := `SELECT DATE_TRUNC('month', CURRENT_DATE) as cur_s, DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month') as prev_s, DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 second' as prev_e`
+		switch tr {
+		case "today":
+			rangesCTE = `SELECT CURRENT_DATE as cur_s, CURRENT_DATE - INTERVAL '1 day' as prev_s, CURRENT_DATE - INTERVAL '1 second' as prev_e`
+		case "7d":
+			rangesCTE = `SELECT CURRENT_DATE - INTERVAL '6 days' as cur_s, CURRENT_DATE - INTERVAL '13 days' as prev_s, CURRENT_DATE - INTERVAL '7 days' + INTERVAL '23 hours 59 minutes 59 seconds' as prev_e`
+		case "30d":
+			rangesCTE = `SELECT DATE_TRUNC('month', CURRENT_DATE) as cur_s, DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month') as prev_s, DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 second' as prev_e`
+		case "365d":
+			rangesCTE = `SELECT DATE_TRUNC('year', CURRENT_DATE) as cur_s, DATE_TRUNC('year', CURRENT_DATE - INTERVAL '1 year') as prev_s, DATE_TRUNC('year', CURRENT_DATE) - INTERVAL '1 second' as prev_e`
+		}
 		
 		rows, err := db.Pool.Query(r.Context(), fmt.Sprintf(`
-			WITH ranges AS (SELECT DATE_TRUNC('month', CURRENT_DATE) as cur_s, DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month') as prev_s, DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 second' as prev_e),
-			data AS (SELECT cr.service_name, ca.provider, SUM(CASE WHEN cr.record_date >= r.cur_s THEN cr.amount_usd ELSE 0 END) as cur, SUM(CASE WHEN cr.record_date >= r.prev_s AND cr.record_date <= r.prev_e THEN cr.amount_usd ELSE 0 END) as prev FROM cost_reports cr JOIN cloud_accounts ca ON ca.id = cr.account_id CROSS JOIN ranges r WHERE cr.record_date >= r.prev_s %s GROUP BY 1, 2)
-			SELECT service_name, provider, cur, prev, (cur - prev), CASE WHEN prev = 0 THEN 100 ELSE ((cur-prev)/prev)*100 END as pct FROM data WHERE cur > 0 OR prev > 0 ORDER BY cur DESC`, extra), args...)
+			WITH ranges AS (%s),
+			data AS (SELECT cr.service_name, ca.provider, SUM(CASE WHEN cr.record_date >= r.cur_s THEN cr.amount_usd ELSE 0 END) as cur, SUM(CASE WHEN cr.record_date >= r.prev_s AND cr.record_date <= r.prev_e THEN cr.amount_usd ELSE 0 END) as prev FROM cost_reports cr JOIN cloud_accounts ca ON ca.id = cr.account_id CROSS JOIN ranges r WHERE ca.user_id = $1 AND cr.record_date >= r.prev_s %s GROUP BY 1, 2)
+			SELECT service_name, provider, cur, prev, (cur - prev), CASE WHEN prev = 0 THEN 100 ELSE ((cur-prev)/prev)*100 END as pct FROM data WHERE cur > 0 OR prev > 0 ORDER BY cur DESC`, rangesCTE, extra), args...)
 		if err != nil {
 			log.Printf("Comparison query error: %v", err)
 			http.Error(w, "Query failed", 500); return
@@ -534,7 +547,7 @@ func main() {
 
 	// Reports - Historical
 	mux.Handle("/api/reports/historical", clerkhttp.RequireHeaderAuthorization()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		userID := getUserID(r)
+		userID := getUserID(r); tr := r.URL.Query().Get("range")
 		if userID == "" { http.Error(w, "Unauthorized", 401); return }
 		ensureUser(r.Context(), db, userID)
 		
@@ -551,11 +564,20 @@ func main() {
 			args = append(args, provider)
 		}
 
+		interval := "12 months"
+		trunc := "month"
+		switch tr {
+		case "today": interval = "2 day"; trunc = "day"
+		case "7d": interval = "7 days"; trunc = "day"
+		case "30d": interval = "30 days"; trunc = "day"
+		case "90d": interval = "3 months"; trunc = "week"
+		}
+
 		rows, err := db.Pool.Query(r.Context(), fmt.Sprintf(`
-			SELECT DATE_TRUNC('month', cr.record_date)::text, SUM(cr.amount_usd) 
+			SELECT DATE_TRUNC('%s', cr.record_date)::text, SUM(cr.amount_usd) 
 			FROM cost_reports cr JOIN cloud_accounts ca ON ca.id = cr.account_id 
-			WHERE ca.user_id = $1 AND cr.record_date >= NOW() - INTERVAL '12 months' %s
-			GROUP BY 1 ORDER BY 1 DESC`, extra), args...)
+			WHERE ca.user_id = $1 AND cr.record_date >= NOW() - INTERVAL '%s' %s
+			GROUP BY 1 ORDER BY 1 DESC`, trunc, interval, extra), args...)
 		if err != nil { 
 			log.Printf("Historical query error: %v", err)
 			http.Error(w, "Query failed", 500); return 
