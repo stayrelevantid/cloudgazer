@@ -37,24 +37,17 @@ func (g *GCPFetcher) FetchCost(ctx context.Context, serviceAccountJSON []byte, b
 	}
 
 	var records []CostRecord
-	now := time.Now().UTC()
-	yesterday := now.AddDate(0, 0, -1)
-
-	// Since Cloud Billing API (without BigQuery) doesn't provide granular costs,
-	// we use project count as a "connectivity success" indicator.
-	if len(res.ProjectBillingInfo) == 0 {
-		fmt.Printf("GCP Sync: Success! Connected to %s, but found no active projects.\n", billingAccountID)
-	} else {
-		fmt.Printf("GCP Sync: Success! Connected to %s, found %d active projects.\n", billingAccountID, len(res.ProjectBillingInfo))
-	}
-
-	for _, proj := range res.ProjectBillingInfo {
-		records = append(records, CostRecord{
-			AmountUSD:   0.0, // Minimal dummy cost for connectivity success
-			Date:        yesterday,
-			ServiceName: fmt.Sprintf("GCP Project: %s", proj.ProjectId),
-			TagName:     "connectivity-test",
-		})
+	// Fill the entire range with 0.0 for now, as real billing data requires BigQuery.
+	// This ensures no gaps in the charts for GCP projects.
+	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
+		for _, proj := range res.ProjectBillingInfo {
+			records = append(records, CostRecord{
+				AmountUSD:   0.0,
+				Date:        d,
+				ServiceName: fmt.Sprintf("GCP Project: %s", proj.ProjectId),
+				TagName:     "active",
+			})
+		}
 	}
 
 	return records, nil

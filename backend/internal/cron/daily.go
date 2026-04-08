@@ -126,7 +126,26 @@ func runSyncForRange(ctx context.Context, db *database.DB, ssmClient *aws.SSMCli
 
 		log.Printf("[Sync] Success! Retrieved %d records for %s", len(records), accountName)
 
-		// 3. Persist to DB (Batch Upsert)
+		// 3. Gap Filling: Ensure every day in the range has at least one record
+		existingDates := make(map[string]bool)
+		for _, r := range records {
+			existingDates[r.Date.Format("2006-01-02")] = true
+		}
+
+		for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
+			dStr := d.Format("2006-01-02")
+			if !existingDates[dStr] {
+				records = append(records, fetcher.CostRecord{
+					Date:         d,
+					ServiceName:  "Account Total",
+					ResourceName: "maintenance",
+					TagName:      "sync-gap-fill",
+					AmountUSD:    0.0,
+				})
+			}
+		}
+
+		// 4. Persist to DB (Batch Upsert)
 		batchSize := 500
 		for i := 0; i < len(records); i += batchSize {
 			endBatch := i + batchSize
