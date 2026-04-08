@@ -459,7 +459,15 @@ func main() {
 		userID := getUserID(r)
 		if userID == "" { http.Error(w, "Unauthorized", 401); return }
 		ensureUser(r.Context(), db, userID)
-		results, _ := janitorSvc.GetIdleResources(r.Context(), userID)
+		
+		accountID := r.URL.Query().Get("account_id")
+		provider := r.URL.Query().Get("provider")
+		
+		results, err := janitorSvc.GetIdleResources(r.Context(), userID, accountID, provider)
+		if err != nil {
+			log.Printf("Janitor error: %v", err)
+			http.Error(w, "Janitor failed", 500); return
+		}
 		fmt.Fprintf(w, `{"janitor":%s}`, toJSON(results))
 	})))
 
