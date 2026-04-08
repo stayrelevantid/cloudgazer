@@ -269,6 +269,11 @@ func main() {
 			query += fmt.Sprintf(" AND cr.account_id = $%d", len(args)+1)
 			args = append(args, accountID)
 		}
+		provider := r.URL.Query().Get("provider")
+		if provider != "" {
+			query += fmt.Sprintf(" AND ca.provider = $%d", len(args)+1)
+			args = append(args, provider)
+		}
 		tag := r.URL.Query().Get("tag")
 		if tag != "" && tag != "all" {
 			query += fmt.Sprintf(" AND cr.tag_name = $%d", len(args)+1)
@@ -345,10 +350,23 @@ func main() {
 		if userID == "" { http.Error(w, "Unauthorized", 401); return }
 		ensureUser(r.Context(), db, userID)
 		
-		rows, err := db.Pool.Query(r.Context(), `
-			WITH m_data AS (SELECT ca.provider, SUM(cr.amount_usd) as so_far, GREATEST(EXTRACT(DAY FROM CURRENT_DATE), 1) as elapsed, EXTRACT(DAY FROM (DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month' - INTERVAL '1 day')) as total FROM cost_reports cr JOIN cloud_accounts ca ON ca.id = cr.account_id WHERE cr.record_date >= DATE_TRUNC('month', CURRENT_DATE) AND ca.user_id = $1 GROUP BY 1),
-			b_data AS (SELECT ca.provider, SUM(COALESCE(b.amount, 0)) as budget FROM cloud_accounts ca LEFT JOIN budgets b ON b.account_id = ca.id AND b.is_active = true WHERE ca.user_id = $2 GROUP BY 1)
-			SELECT m.provider, m.so_far, (m.so_far/m.elapsed)*m.total, COALESCE(b.budget, 0) FROM m_data m LEFT JOIN b_data b ON b.provider = m.provider`, userID, userID)
+		args := []interface{}{userID}
+		extra := ""
+		accountID := r.URL.Query().Get("account_id")
+		if accountID != "" {
+			extra += fmt.Sprintf(" AND ca.id = $%d", len(args)+1)
+			args = append(args, accountID)
+		}
+		provider := r.URL.Query().Get("provider")
+		if provider != "" {
+			extra += fmt.Sprintf(" AND ca.provider = $%d", len(args)+1)
+			args = append(args, provider)
+		}
+
+		rows, err := db.Pool.Query(r.Context(), fmt.Sprintf(`
+			WITH m_data AS (SELECT ca.provider, SUM(cr.amount_usd) as so_far, GREATEST(EXTRACT(DAY FROM CURRENT_DATE), 1) as elapsed, EXTRACT(DAY FROM (DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month' - INTERVAL '1 day')) as total FROM cost_reports cr JOIN cloud_accounts ca ON ca.id = cr.account_id WHERE cr.record_date >= DATE_TRUNC('month', CURRENT_DATE) AND ca.user_id = $1 %s GROUP BY 1),
+			b_data AS (SELECT ca.provider, SUM(COALESCE(b.amount, 0)) as budget FROM cloud_accounts ca LEFT JOIN budgets b ON b.account_id = ca.id AND b.is_active = true WHERE ca.user_id = $1 %s GROUP BY 1)
+			SELECT m.provider, m.so_far, (m.so_far/m.elapsed)*m.total, COALESCE(b.budget, 0) FROM m_data m LEFT JOIN b_data b ON b.provider = m.provider`, extra, extra), args...)
 		if err != nil {
 			log.Printf("Forecasting query error: %v", err)
 			http.Error(w, "Query failed", 500); return
@@ -373,6 +391,19 @@ func main() {
 		fld := "'Total'"; switch gb { case "account": fld = "ca.account_name"; case "service": fld = "cr.service_name"; case "provider": fld = "ca.provider"; case "tag": fld = "cr.tag_name" }
 		
 		query := fmt.Sprintf("SELECT DATE_TRUNC('%s', cr.record_date)::text, %s, SUM(cr.amount_usd) FROM cost_reports cr JOIN cloud_accounts ca ON ca.id = cr.account_id WHERE ca.user_id = $1", trunc, fld)
+		args := []interface{}{userID}
+		
+		accountID := r.URL.Query().Get("account_id")
+		if accountID != "" {
+			query += fmt.Sprintf(" AND cr.account_id = $%d", len(args)+1)
+			args = append(args, accountID)
+		}
+		provider := r.URL.Query().Get("provider")
+		if provider != "" {
+			query += fmt.Sprintf(" AND ca.provider = $%d", len(args)+1)
+			args = append(args, provider)
+		}
+
 		switch tr {
 		case "7d": query += " AND cr.record_date >= CURRENT_DATE - INTERVAL '6 days'"
 		case "30d": query += " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)"
@@ -380,7 +411,7 @@ func main() {
 		}
 		query += " GROUP BY 1, 2 ORDER BY 1 ASC"
 		
-		rows, err := db.Pool.Query(r.Context(), query, userID)
+		rows, err := db.Pool.Query(r.Context(), query, args...)
 		if err != nil {
 			log.Printf("Advanced query error: %v", err)
 			http.Error(w, "Query failed", 500); return
@@ -401,10 +432,28 @@ func main() {
 		ensureUser(r.Context(), db, userID)
 		
 		query := "SELECT ca.account_name, ca.provider, cr.service_name, cr.resource_name, cr.tag_name, SUM(cr.amount_usd) FROM cost_reports cr JOIN cloud_accounts ca ON ca.id = cr.account_id WHERE ca.user_id = $1"
+		args := []interface{}{userID}
+		
+		accountID := r.URL.Query().Get("account_id")
+		if accountID != "" {
+			query += fmt.Sprintf(" AND cr.account_id = $%d", len(args)+1)
+			args = append(args, accountID)
+		}
+		provider := r.URL.Query().Get("provider")
+		if provider != "" {
+			query += fmt.Sprintf(" AND ca.provider = $%d", len(args)+1)
+			args = append(args, provider)
+		}
+		tag := r.URL.Query().Get("tag")
+		if tag != "" && tag != "all" {
+			query += fmt.Sprintf(" AND cr.tag_name = $%d", len(args)+1)
+			args = append(args, tag)
+		}
+
 		switch tr { case "7d": query += " AND cr.record_date >= CURRENT_DATE - INTERVAL '6 days'"; default: query += " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)" }
 		query += " GROUP BY 1,2,3,4,5 ORDER BY 6 DESC"
 		
-		rows, err := db.Pool.Query(r.Context(), query, userID)
+		rows, err := db.Pool.Query(r.Context(), query, args...)
 		if err != nil {
 			log.Printf("Resources query error: %v", err)
 			http.Error(w, "Query failed", 500); return
@@ -423,7 +472,15 @@ func main() {
 		userID := getUserID(r)
 		if userID == "" { http.Error(w, "Unauthorized", 401); return }
 		ensureUser(r.Context(), db, userID)
-		results, _ := janitorSvc.GetIdleResources(r.Context(), userID)
+		
+		accountID := r.URL.Query().Get("account_id")
+		provider := r.URL.Query().Get("provider")
+		
+		results, err := janitorSvc.GetIdleResources(r.Context(), userID, accountID, provider)
+		if err != nil {
+			log.Printf("Janitor error: %v", err)
+			http.Error(w, "Janitor failed", 500); return
+		}
 		fmt.Fprintf(w, `{"janitor":%s}`, toJSON(results))
 	})))
 

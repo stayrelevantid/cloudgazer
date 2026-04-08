@@ -16,6 +16,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
 
 
 type Resource = {
@@ -37,12 +44,16 @@ export default function JanitorPage() {
     const { getToken } = useAuth();
     const [results, setResults] = useState<JanitorResult[]>([]);
     const [loading, setLoading] = useState(true);
+    const [accounts, setAccounts] = useState<{ id: string; account_name: string; provider: string }[]>([]);
+    const [selectedAccount, setSelectedAccount] = useState<string>("all");
+    const [selectedProvider, setSelectedProvider] = useState<string>("all");
 
     const fetchData = useCallback(async () => {
         setLoading(true);
         try {
             const token = await getToken();
-            const res = await fetch(`${API_BASE}/api/janitor`, {
+            const params = `account_id=${selectedAccount === "all" ? "" : selectedAccount}&provider=${selectedProvider === "all" ? "" : selectedProvider}`;
+            const res = await fetch(`${API_BASE}/api/janitor?${params}`, {
                 headers: { "Authorization": `Bearer ${token}` }
             });
             const data = await res.json();
@@ -53,11 +64,23 @@ export default function JanitorPage() {
         } finally {
             setLoading(false);
         }
-    }, [getToken]);
+    }, [getToken, selectedAccount, selectedProvider]);
 
     useEffect(() => {
         fetchData();
     }, [fetchData]);
+
+    useEffect(() => {
+        const loadAccounts = async () => {
+            const token = await getToken();
+            const headers = { "Authorization": `Bearer ${token}` };
+            fetch(`${API_BASE}/api/accounts`, { headers })
+                .then(r => r.json())
+                .then(data => setAccounts(data.accounts ?? []))
+                .catch(() => setAccounts([]));
+        };
+        loadAccounts();
+    }, [getToken]);
 
     const totalResources = results.reduce((acc, curr) => acc + curr.resources.length, 0);
 
@@ -79,6 +102,41 @@ export default function JanitorPage() {
                     <RefreshCcw size={16} className={loading ? "animate-spin" : ""} />
                     Refresh
                 </Button>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 bg-card/50 p-3 rounded-xl border border-border/50 backdrop-blur-sm">
+                <Select value={selectedProvider} onValueChange={(val) => {
+                    setSelectedProvider(val ?? "all");
+                    setSelectedAccount("all");
+                }}>
+                    <SelectTrigger className="w-[140px] bg-background border-border">
+                        <SelectValue placeholder="All Providers" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-card border-border border">
+                        <SelectItem value="all">All Providers</SelectItem>
+                        <SelectItem value="aws">AWS</SelectItem>
+                        <SelectItem value="gcp">GCP</SelectItem>
+                    </SelectContent>
+                </Select>
+
+                <Select value={selectedAccount} onValueChange={(val) => setSelectedAccount(val ?? "all")}>
+                    <SelectTrigger className="w-[180px] bg-background border-border">
+                        <SelectValue>
+                            {selectedAccount === "all" ? "All Accounts" : accounts.find(a => a.id === selectedAccount)?.account_name}
+                        </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent className="bg-card border-border border">
+                        <SelectItem value="all">All Accounts</SelectItem>
+                        {accounts
+                            .filter(a => selectedProvider === "all" || a.provider === selectedProvider)
+                            .map(acc => (
+                                <SelectItem key={acc.id} value={acc.id}>
+                                    {acc.account_name}
+                                </SelectItem>
+                            ))
+                        }
+                    </SelectContent>
+                </Select>
             </div>
 
             {loading ? (
