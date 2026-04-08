@@ -217,10 +217,12 @@ export default function AlertsPage() {
                 </div>
 
                 <Dialog open={isOpen} onOpenChange={setIsOpen}>
-                    <DialogTrigger render={<Button className="bg-primary hover:bg-primary/90 text-primary-foreground gap-2">
-                        <Plus size={16} />
-                        Add Alert
-                    </Button>} />
+                    <DialogTrigger render={
+                        <Button className="bg-primary hover:bg-primary/90 text-primary-foreground gap-2">
+                            <Plus size={16} />
+                            Add Alert
+                        </Button>
+                    } />
                     <DialogContent className="bg-card border-border text-foreground sm:max-w-[425px]">
                         <DialogHeader>
                             <DialogTitle>Configure Alert</DialogTitle>
@@ -330,13 +332,13 @@ export default function AlertsPage() {
                                 </TableRow>
                             ) : (
                                 alerts.map((al) => (
-                                    <TableRow key={al.id} className="border-border hover:bg-muted/50 transition-colors">
+                                    <TableRow key={al.account_id} className="border-border hover:bg-muted/50 transition-colors">
                                         <TableCell className="font-medium text-foreground">
-                                            {al.account_name}
-                                            <span className="text-muted-foreground text-xs ml-2 uppercase">({al.provider})</span>
+                                            {al.account_name || "Unknown Account"}
+                                            <span className="text-muted-foreground text-xs ml-2 uppercase">({al.provider || "???"})</span>
                                         </TableCell>
                                         <TableCell className="text-primary font-mono">
-                                            ${al.weekly_threshold.toFixed(2)}
+                                            ${(Number(al.weekly_threshold) || 0).toFixed(2)}
                                         </TableCell>
                                         <TableCell>
                                             <Badge variant="outline" className="border-border text-muted-foreground capitalize">
@@ -360,8 +362,8 @@ export default function AlertsPage() {
                                                 variant="ghost"
                                                 size="icon"
                                                 className="text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
-                                                onClick={() => handleTestWebhook(al.channel, al.webhook_url, al.id)}
-                                                disabled={testLoading === al.id}
+                                                onClick={() => handleTestWebhook(al.channel, al.webhook_url, al.account_id)}
+                                                disabled={testLoading === al.account_id}
                                             >
                                                 <Send size={16} />
                                             </Button>

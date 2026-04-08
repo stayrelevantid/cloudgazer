@@ -436,12 +436,22 @@ func main() {
 		if userID == "" { http.Error(w, "Unauthorized", 401); return }
 		ensureUser(r.Context(), db, userID)
 		if r.Method == http.MethodGet {
-			rows, _ := db.Pool.Query(r.Context(), "SELECT channel, webhook_url, weekly_threshold, account_id FROM alert_configs ac JOIN cloud_accounts ca ON ca.id = ac.account_id WHERE ca.user_id = $1", userID)
+			rows, _ := db.Pool.Query(r.Context(), "SELECT ac.channel, ac.webhook_url, ac.weekly_threshold, ac.account_id, ca.account_name, ca.provider FROM alert_configs ac JOIN cloud_accounts ca ON ca.id = ac.account_id WHERE ca.user_id = $1", userID)
 			defer rows.Close()
 			var res []interface{}
 			for rows.Next() {
-				var c, w, t, a string; rows.Scan(&c, &w, &t, &a)
-				res = append(res, map[string]string{"channel": c, "webhook_url": w, "weekly_threshold": t, "account_id": a})
+				var c, w, a, an, p string; var t float64
+				if err := rows.Scan(&c, &w, &t, &a, &an, &p); err == nil {
+					res = append(res, map[string]interface{}{
+						"channel":          c,
+						"webhook_url":      w,
+						"weekly_threshold": t,
+						"account_id":       a,
+						"account_name":     an,
+						"provider":         p,
+						"is_active":        true,
+					})
+				}
 			}
 			fmt.Fprintf(w, `{"alerts":%s}`, toJSON(res)); return
 		}
