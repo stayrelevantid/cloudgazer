@@ -409,7 +409,7 @@ export default function DashboardPage() {
                             <SelectItem value="today-day">Today</SelectItem>
                             <SelectItem value="7d-day">This Week</SelectItem>
                             <SelectItem value="30d-day">This Month</SelectItem>
-                            <SelectItem value="90d-month">Last 3 Months</SelectItem>
+                            <SelectItem value="90d-week">Last 3 Months</SelectItem>
                             <SelectItem value="180d-month">Last 6 Months</SelectItem>
                             <SelectItem value="365d-month">This Year</SelectItem>
                             <SelectItem value="last_year-month">Last Year</SelectItem>
@@ -474,7 +474,11 @@ export default function DashboardPage() {
                     value={timeframe === "today" ? "Stable" : 
                         granularity === "day" 
                         ? format(totalAll / (parseInt(timeframe) || 1))
-                        : format(totalAll / 12)
+                        : format(totalAll / (
+                            timeframe === "90d" ? 3 :
+                            timeframe === "180d" ? 6 :
+                            12
+                        ))
                     }
                     icon={<TrendingUp size={18} className="text-orange-400" />}
                     color="orange"
@@ -600,7 +604,7 @@ export default function DashboardPage() {
                                     className: "w-[30%]"
                                 },
                                 {
-                                    header: `Last Month (${symbol})`,
+                                    header: timeframe === "30d" || timeframe === "today" || timeframe === "7d" ? `Previous (${symbol})` : timeframe === "90d" ? `Prev 3M (${symbol})` : timeframe === "180d" ? `Prev 6M (${symbol})` : `Previous (${symbol})`,
                                     accessorKey: (row) => (
                                         <div className="text-muted-foreground font-mono">
                                             {format(row.prev_total)}
@@ -609,7 +613,7 @@ export default function DashboardPage() {
                                     align: "right"
                                 },
                                 {
-                                    header: `This Month (${symbol})`,
+                                    header: timeframe === "30d" || timeframe === "today" || timeframe === "7d" ? `Current (${symbol})` : timeframe === "90d" ? `Current 3M (${symbol})` : timeframe === "180d" ? `Current 6M (${symbol})` : `Current (${symbol})`,
                                     accessorKey: (row) => (
                                         <div className="text-foreground font-bold font-mono">
                                             {format(row.current_total)}
@@ -770,8 +774,8 @@ export default function DashboardPage() {
                                     <div className="text-muted-foreground font-medium py-1 capitalize">
                                         {new Date(row.period).toLocaleDateString('en-US', {
                                             month: granularity === 'month' ? 'long' : 'short',
-                                            year: granularity === 'month' ? 'numeric' : undefined,
-                                            day: granularity === 'day' ? 'numeric' : undefined
+                                            year: granularity === 'month' || granularity === 'week' ? 'numeric' : undefined,
+                                            day: granularity === 'day' || granularity === 'week' ? 'numeric' : undefined
                                         })}
                                     </div>
                                 ),
