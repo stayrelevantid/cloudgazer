@@ -73,6 +73,7 @@ export default function DashboardPage() {
     const [services, setServices] = useState<ServiceRow[]>([]);
     const [historical, setHistorical] = useState<HistoricalRow[]>([]);
     const [loading, setLoading] = useState(true);
+    const [resourcesLoading, setResourcesLoading] = useState(false);
     const [timeframe, setTimeframe] = useState("30d");
     const [granularity, setGranularity] = useState("day");
     const [accounts, setAccounts] = useState<{ id: string; account_name: string; provider: string }[]>([]);
@@ -82,23 +83,21 @@ export default function DashboardPage() {
     const [tags, setTags] = useState<string[]>([]);
     const [selectedTag, setSelectedTag] = useState<string>("all");
 
-    const fetchData = useCallback(async () => {
+    const fetchGlobalData = useCallback(async () => {
         setLoading(true);
         const token = await getToken();
         const headers = { "Authorization": `Bearer ${token}` };
-        const params = `range=${timeframe}&granularity=${granularity}&account_id=${selectedAccount === "all" ? "" : selectedAccount}&provider=${selectedProvider === "all" ? "" : selectedProvider}&group_by=${groupBy}&tag=${selectedTag}`;
+        const params = `range=${timeframe}&granularity=${granularity}&account_id=${selectedAccount === "all" ? "" : selectedAccount}&provider=${selectedProvider === "all" ? "" : selectedProvider}`;
         
         Promise.all([
             fetch(`${API_BASE}/api/reports/advanced?${params}`, { headers }).then(r => r.json()),
-            fetch(`${API_BASE}/api/reports/resources?${params}`, { headers }).then(r => r.json()),
             fetch(`${API_BASE}/api/reports/services?${params}`, { headers }).then(r => r.json()),
             fetch(`${API_BASE}/api/reports/historical?${params}`, { headers }).then(r => r.json()),
             fetch(`${API_BASE}/api/reports/comparison?${params}`, { headers }).then(r => r.json()),
             fetch(`${API_BASE}/api/reports/forecasting?${params}`, { headers }).then(r => r.json())
         ])
-            .then(([rData, resData, sData, hData, cData, fData]) => {
+            .then(([rData, sData, hData, cData, fData]) => {
                 setRows(rData.reports ?? []);
-                setResources(resData.resources ?? []);
                 setServices(sData.services ?? []);
                 setHistorical(hData.historical ?? []);
                 setComparison(cData.comparison ?? []);
@@ -106,15 +105,35 @@ export default function DashboardPage() {
             })
             .catch(() => {
                 setRows([]);
-                setResources([]);
                 setHistorical([]);
             })
             .finally(() => setLoading(false));
-    }, [timeframe, granularity, selectedAccount, selectedProvider, groupBy, selectedTag, getToken]);
+    }, [timeframe, granularity, selectedAccount, selectedProvider, getToken]);
+
+    const fetchResourcesData = useCallback(async () => {
+        setResourcesLoading(true);
+        const token = await getToken();
+        const headers = { "Authorization": `Bearer ${token}` };
+        const params = `range=${timeframe}&account_id=${selectedAccount === "all" ? "" : selectedAccount}&provider=${selectedProvider === "all" ? "" : selectedProvider}&group_by=${groupBy}&tag=${selectedTag}`;
+        
+        fetch(`${API_BASE}/api/reports/resources?${params}`, { headers })
+            .then(r => r.json())
+            .then(resData => {
+                setResources(resData.resources ?? []);
+            })
+            .catch(() => {
+                setResources([]);
+            })
+            .finally(() => setResourcesLoading(false));
+    }, [timeframe, selectedAccount, selectedProvider, groupBy, selectedTag, getToken]);
 
     useEffect(() => {
-        fetchData();
-    }, [fetchData]);
+        fetchGlobalData();
+    }, [fetchGlobalData]);
+
+    useEffect(() => {
+        fetchResourcesData();
+    }, [fetchResourcesData]);
 
     useEffect(() => {
         const loadMeta = async () => {
@@ -144,7 +163,8 @@ export default function DashboardPage() {
             });
             if (res.ok) {
                 toast.success("Data synchronized successfully!");
-                fetchData();
+                fetchGlobalData();
+                fetchResourcesData();
             } else {
                 toast.error("Failed to sync data.");
                 setLoading(false);
@@ -670,7 +690,15 @@ export default function DashboardPage() {
                         </div>
                         <CardDescription>Individual resource expenditure</CardDescription>
                     </CardHeader>
-                    <CardContent className="p-4 flex-1">
+                    <CardContent className="p-4 flex-1 relative min-h-[300px]">
+                        {resourcesLoading && (
+                            <div className="absolute inset-0 bg-card/60 backdrop-blur-[1px] z-10 flex items-center justify-center">
+                                <div className="flex flex-col items-center gap-2">
+                                    <RefreshCcw size={24} className="text-primary animate-spin" />
+                                    <span className="text-xs text-muted-foreground font-medium">Updating resources...</span>
+                                </div>
+                            </div>
+                        )}
                         <SimpleDataTable
                             data={resources.map(r => ({ ...r, unique_id: `${r.account_name}-${r.service_name}-${r.resource_name}-${r.tag_name}` }))}
                             emptyMessage="No resource data found"
