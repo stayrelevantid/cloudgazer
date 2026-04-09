@@ -351,7 +351,7 @@ func main() {
 		rows, err := db.Pool.Query(r.Context(), fmt.Sprintf(`
 			WITH ranges AS (%s),
 			data AS (SELECT COALESCE(cr.service_name, 'No activity') as service_name, ca.provider, SUM(CASE WHEN cr.record_date >= r.cur_s AND cr.record_date <= r.cur_e THEN cr.amount_usd ELSE 0 END) as cur, SUM(CASE WHEN cr.record_date >= r.prev_s AND cr.record_date <= r.prev_e THEN cr.amount_usd ELSE 0 END) as prev FROM cloud_accounts ca LEFT JOIN cost_reports cr ON ca.id = cr.account_id CROSS JOIN ranges r WHERE ca.user_id = $1 %s GROUP BY 1, 2)
-			SELECT service_name, provider, cur, prev, (cur - prev), CASE WHEN prev = 0 THEN 100 ELSE ((cur-prev)/prev)*100 END as pct FROM data ORDER BY cur DESC`, rangesCTE, extra), args...)
+			SELECT service_name, provider, cur, prev, (cur - prev), CASE WHEN prev = 0 THEN 0 ELSE ((cur-prev)/prev)*100 END as pct FROM data ORDER BY cur DESC`, rangesCTE, extra), args...)
 		if err != nil {
 			log.Printf("Comparison query error: %v", err)
 			http.Error(w, "Query failed", 500); return
@@ -491,7 +491,13 @@ func main() {
 			args = append(args, provider)
 		}
 		
-		query += " GROUP BY 1,2,3,4,5 ORDER BY 6 DESC"
+		groupBy := r.URL.Query().Get("group_by")
+		if groupBy == "tag" {
+			// When grouping by tag, aggregate per tag (collapse resource_name)
+			query += " GROUP BY ca.account_name, ca.provider, COALESCE(cr.service_name, 'No activity'), COALESCE(cr.tag_name, 'untagged') ORDER BY SUM(COALESCE(cr.amount_usd, 0)) DESC"
+		} else {
+			query += " GROUP BY 1,2,3,4,5 ORDER BY 6 DESC"
+		}
 		
 		rows, err := db.Pool.Query(r.Context(), query, args...)
 		if err != nil {
