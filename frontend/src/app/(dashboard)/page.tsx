@@ -89,7 +89,7 @@ export default function DashboardPage() {
     const humanTimeframe = (tf: string): string => {
         const map: Record<string, string> = {
             "today": "Cloud costs for today",
-            "7d": "Cloud costs for this week",
+            "7d": "Cloud costs for the last 7 days",
             "30d": "Cloud costs for this month",
             "90d": "Cloud costs for the last 3 months",
             "180d": "Cloud costs for the last 6 months",
@@ -425,7 +425,7 @@ export default function DashboardPage() {
                         </SelectTrigger>
                         <SelectContent className="bg-card border-border">
                             <SelectItem value="today-day">Today</SelectItem>
-                            <SelectItem value="7d-day">This Week</SelectItem>
+                            <SelectItem value="7d-day">Last 7 Days</SelectItem>
                             <SelectItem value="30d-day">This Month</SelectItem>
                             <SelectItem value="90d-week">Last 3 Months</SelectItem>
                             <SelectItem value="180d-month">Last 6 Months</SelectItem>
@@ -453,7 +453,7 @@ export default function DashboardPage() {
             )}
 
             {/* Summary Cards */}
-            <div className={`grid grid-cols-1 sm:grid-cols-2 ${(timeframe === "30d") ? "lg:grid-cols-4" : "lg:grid-cols-2"} gap-4`}>
+            <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4`}>
                 <SummaryCard
                     title={timeframe === "today" ? "Today's Cost" : 
                            timeframe === "last_year" ? `Total Cost (${new Date().getFullYear() - 1})` :
@@ -464,42 +464,38 @@ export default function DashboardPage() {
                     color="primary"
                 />
 
-                {(timeframe === "30d") && (
-                    <>
-                        <SummaryCard
-                            title="MoM Change"
-                            value={`${momChange >= 0 ? "+" : ""}${momChange.toFixed(1)}%`}
-                            icon={<TrendingUp size={18} className={momChange > 0 ? "text-destructive" : "text-emerald-400"} />}
-                            color={momChange > 0 ? "destructive" : "emerald"}
-                            subtitle={`vs ${format(prevTotalAll)} last month`}
-                        />
-                        <SummaryCard
-                            title={`Forecasted ${new Intl.DateTimeFormat('en-US', { month: 'short' }).format(new Date())} Total`}
-                            value={format(projectedTotalAll)}
-                            icon={<RefreshCcw size={18} className="text-blue-400" />}
-                            color="blue"
-                            subtitle="Projected end of month"
-                            footer={totalBudgetAll > 0 && (
-                                <div className="space-y-3">
-                                    <div className="flex justify-between items-center">
-                                        <Badge variant="outline" className={`text-[10px] font-bold uppercase ${warningBg} ${warningColor} border-none`}>
-                                            {warningStatus}
-                                        </Badge>
-                                        <span className="text-[10px] text-muted-foreground font-semibold">
-                                            Budget: {format(totalBudgetAll)}
-                                        </span>
-                                    </div>
-                                    <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
-                                        <div 
-                                            className={`h-full transition-all duration-1000 ${budgetUsagePercent > 100 ? "bg-destructive" : budgetUsagePercent > 80 ? "bg-orange-400" : "bg-primary"}`}
-                                            style={{ width: `${Math.min(100, budgetUsagePercent)}%` }}
-                                        />
-                                    </div>
-                                </div>
-                            )}
-                        />
-                    </>
-                )}
+                <SummaryCard
+                    title="Period Change"
+                    value={`${momChange >= 0 ? "+" : ""}${momChange.toFixed(1)}%`}
+                    icon={<TrendingUp size={18} className={momChange > 0 ? "text-destructive" : "text-emerald-400"} />}
+                    color={momChange > 0 ? "destructive" : "emerald"}
+                    subtitle={`vs ${format(prevTotalAll)} previous period`}
+                />
+                <SummaryCard
+                    title={`Forecasted ${new Intl.DateTimeFormat('en-US', { month: 'short' }).format(new Date())} Total`}
+                    value={format(projectedTotalAll)}
+                    icon={<RefreshCcw size={18} className="text-blue-400" />}
+                    color="blue"
+                    subtitle="Projected end of month"
+                    footer={totalBudgetAll > 0 && (
+                        <div className="space-y-3">
+                            <div className="flex justify-between items-center">
+                                <Badge variant="outline" className={`text-[10px] font-bold uppercase ${warningBg} ${warningColor} border-none`}>
+                                    {warningStatus}
+                                </Badge>
+                                <span className="text-[10px] text-muted-foreground font-semibold">
+                                    Budget: {format(totalBudgetAll)}
+                                </span>
+                            </div>
+                            <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+                                <div 
+                                    className={`h-full transition-all duration-1000 ${budgetUsagePercent > 100 ? "bg-destructive" : budgetUsagePercent > 80 ? "bg-orange-400" : "bg-primary"}`}
+                                    style={{ width: `${Math.min(100, budgetUsagePercent)}%` }}
+                                />
+                            </div>
+                        </div>
+                    )}
+                />
 
                 <SummaryCard
                     title={granularity === "day" ? (timeframe === "today" ? "Burn Status" : "Daily Burn Rate") : "Monthly Burn Rate"}
