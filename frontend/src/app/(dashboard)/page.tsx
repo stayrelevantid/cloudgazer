@@ -12,7 +12,7 @@ import {
     XAxis,
     YAxis,
 } from "recharts";
-import { Cloud, DollarSign, TrendingUp, RefreshCcw, BarChart3, Layers, Download, Box, LayoutGrid, FileSpreadsheet, FileText, ChevronDown, Tag as TagIcon, Filter } from "lucide-react";
+import { DollarSign, TrendingUp, RefreshCcw, BarChart3, Layers, Download, Box, LayoutGrid, FileSpreadsheet, FileText, Tag as TagIcon, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useCurrency } from "@/contexts/CurrencyContext";
@@ -83,12 +83,29 @@ export default function DashboardPage() {
     const [groupBy, setGroupBy] = useState<string>("all");
     const [tags, setTags] = useState<string[]>([]);
     const [selectedTag, setSelectedTag] = useState<string>("all");
+    const [fetchError, setFetchError] = useState(false);
+
+    // Helper to get human-readable timeframe label
+    const humanTimeframe = (tf: string): string => {
+        const map: Record<string, string> = {
+            "today": "Cloud costs for today",
+            "7d": "Cloud costs for this week",
+            "30d": "Cloud costs for this month",
+            "90d": "Cloud costs for the last 3 months",
+            "180d": "Cloud costs for the last 6 months",
+            "365d": "Cloud costs for this year",
+            "last_year": `Cloud costs for ${new Date().getFullYear() - 1}`,
+            "2y_ago": `Cloud costs for ${new Date().getFullYear() - 2}`,
+        };
+        return map[tf] || `Cloud costs for the last ${tf.replace('d', ' days')}`;
+    };
 
     const fetchGlobalData = useCallback(async () => {
         setLoading(true);
+        setFetchError(false);
         const token = await getToken();
         const headers = { "Authorization": `Bearer ${token}` };
-        const params = `range=${timeframe}&granularity=${granularity}&account_id=${selectedAccount === "all" ? "" : selectedAccount}&provider=${selectedProvider === "all" ? "" : selectedProvider}`;
+        const params = `range=${timeframe}&granularity=${granularity}&group_by=${groupBy}&account_id=${selectedAccount === "all" ? "" : selectedAccount}&provider=${selectedProvider === "all" ? "" : selectedProvider}`;
         
         Promise.all([
             fetch(`${API_BASE}/api/reports/advanced?${params}`, { headers }).then(r => r.json()),
@@ -105,11 +122,15 @@ export default function DashboardPage() {
                 setForecasts(fData.forecasting ?? []);
             })
             .catch(() => {
+                setFetchError(true);
                 setRows([]);
+                setServices([]);
                 setHistorical([]);
+                setComparison([]);
+                setForecasts([]);
             })
             .finally(() => setLoading(false));
-    }, [timeframe, granularity, selectedAccount, selectedProvider, getToken]);
+    }, [timeframe, granularity, groupBy, selectedAccount, selectedProvider, getToken]);
 
     const fetchResourcesData = useCallback(async () => {
         setResourcesLoading(true);
@@ -219,8 +240,8 @@ export default function DashboardPage() {
         const url = URL.createObjectURL(blob);
         link.setAttribute("href", url);
         const accountName = selectedAccount === "all" ? "All Accounts" : accounts.find(a => a.id === selectedAccount)?.account_name || selectedAccount;
-        const tagParam = selectedTag !== "all" ? `&tag=${selectedTag}` : "";
-        link.setAttribute("download", `services_export_${timeframe}_${accountName}.csv`);
+        const tagSuffix = selectedTag !== "all" ? `_${selectedTag}` : "";
+        link.setAttribute("download", `services_export_${timeframe}_${accountName}${tagSuffix}.csv`);
         link.style.visibility = "hidden";
         document.body.appendChild(link);
         link.click();
@@ -279,8 +300,8 @@ export default function DashboardPage() {
         const url = URL.createObjectURL(blob);
         link.setAttribute("href", url);
         const accountName = selectedAccount === "all" ? "All Accounts" : accounts.find(a => a.id === selectedAccount)?.account_name || selectedAccount;
-        const tagParam = selectedTag !== "all" ? `&tag=${selectedTag}` : "";
-        link.setAttribute("download", `resources_export_${timeframe}_${accountName}.csv`);
+        const tagSuffix = selectedTag !== "all" ? `_${selectedTag}` : "";
+        link.setAttribute("download", `resources_export_${timeframe}_${accountName}${tagSuffix}.csv`);
         link.style.visibility = "hidden";
         document.body.appendChild(link);
         link.click();
@@ -330,11 +351,7 @@ export default function DashboardPage() {
                     <div>
                         <h1 className="text-2xl font-bold text-foreground">Overview</h1>
                         <p className="text-muted-foreground text-sm mt-1">
-                            {timeframe === "today" ? "Cloud costs for today" : 
-                            timeframe === "last_year" ? `Cloud costs for ${new Date().getFullYear() - 1}` :
-                            timeframe === "2y_ago" ? `Cloud costs for ${new Date().getFullYear() - 2}` :
-                            timeframe === "365d" ? "Cloud costs for this year" : 
-                            `Cloud costs for the last ${timeframe.replace('d', ' days')}`}
+                            {humanTimeframe(timeframe)}
                         </p>
                     </div>
 
@@ -420,6 +437,20 @@ export default function DashboardPage() {
 
                 </div>
             </div>
+
+            {/* Error Banner */}
+            {fetchError && (
+                <div className="flex items-center gap-3 p-4 rounded-xl border border-destructive/50 bg-destructive/10 text-destructive">
+                    <AlertCircle size={20} />
+                    <div className="flex-1">
+                        <p className="font-medium text-sm">Failed to load dashboard data</p>
+                        <p className="text-xs opacity-80">Please check your connection and try again.</p>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={fetchGlobalData} className="border-destructive/30 text-destructive hover:bg-destructive/10">
+                        Retry
+                    </Button>
+                </div>
+            )}
 
             {/* Summary Cards */}
             <div className={`grid grid-cols-1 sm:grid-cols-2 ${(timeframe === "30d") ? "lg:grid-cols-4" : "lg:grid-cols-2"} gap-4`}>
@@ -517,7 +548,12 @@ export default function DashboardPage() {
                                     fontSize={12} 
                                     tickLine={false} 
                                     axisLine={false}
-                                    tickFormatter={(val) => new Date(val).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}
+                                    tickFormatter={(val) => {
+                                        const d = new Date(val);
+                                        if (granularity === 'month') return d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+                                        if (granularity === 'week') return d.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
+                                        return d.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
+                                    }}
                                 />
                                 <YAxis 
                                     stroke="#64748b" 
@@ -605,7 +641,15 @@ export default function DashboardPage() {
                                     className: "w-[30%]"
                                 },
                                 {
-                                    header: timeframe === "30d" || timeframe === "today" || timeframe === "7d" ? `Previous (${symbol})` : timeframe === "90d" ? `Prev 3M (${symbol})` : timeframe === "180d" ? `Prev 6M (${symbol})` : `Previous (${symbol})`,
+                                    header: (() => {
+                                        const s = symbol;
+                                        if (timeframe === "365d") return `Last Year (${s})`;
+                                        if (timeframe === "last_year") return `${new Date().getFullYear() - 2} (${s})`;
+                                        if (timeframe === "2y_ago") return `${new Date().getFullYear() - 3} (${s})`;
+                                        if (timeframe === "90d") return `Prev 3M (${s})`;
+                                        if (timeframe === "180d") return `Prev 6M (${s})`;
+                                        return `Previous (${s})`;
+                                    })(),
                                     accessorKey: (row) => (
                                         <div className="text-muted-foreground font-mono">
                                             {format(row.prev_total)}
@@ -614,7 +658,15 @@ export default function DashboardPage() {
                                     align: "right"
                                 },
                                 {
-                                    header: timeframe === "30d" || timeframe === "today" || timeframe === "7d" ? `Current (${symbol})` : timeframe === "90d" ? `Current 3M (${symbol})` : timeframe === "180d" ? `Current 6M (${symbol})` : `Current (${symbol})`,
+                                    header: (() => {
+                                        const s = symbol;
+                                        if (timeframe === "365d") return `This Year (${s})`;
+                                        if (timeframe === "last_year") return `${new Date().getFullYear() - 1} (${s})`;
+                                        if (timeframe === "2y_ago") return `${new Date().getFullYear() - 2} (${s})`;
+                                        if (timeframe === "90d") return `Current 3M (${s})`;
+                                        if (timeframe === "180d") return `Current 6M (${s})`;
+                                        return `Current (${s})`;
+                                    })(),
                                     accessorKey: (row) => (
                                         <div className="text-foreground font-bold font-mono">
                                             {format(row.current_total)}
@@ -626,7 +678,7 @@ export default function DashboardPage() {
                                     header: "Change (%)",
                                     accessorKey: (row) => (
                                         <div className={`text-right font-semibold flex items-center justify-end gap-1 ${row.delta > 0 ? "text-destructive" : row.delta < 0 ? "text-emerald-400" : "text-muted-foreground"}`}>
-                                            {row.delta > 0 ? "+" : ""}{row.delta_percent.toFixed(1)}%
+                                            {row.prev_total === 0 && row.current_total > 0 ? "New" : <>{row.delta > 0 ? "+" : ""}{row.delta_percent.toFixed(1)}%</>}
                                         </div>
                                     ),
                                     align: "right"
@@ -775,7 +827,7 @@ export default function DashboardPage() {
                                     <div className="text-muted-foreground font-medium py-1 capitalize">
                                         {new Date(row.period).toLocaleDateString('en-US', {
                                             month: granularity === 'month' ? 'long' : 'short',
-                                            year: granularity === 'month' || granularity === 'week' ? 'numeric' : undefined,
+                                            year: 'numeric',
                                             day: granularity === 'day' || granularity === 'week' ? 'numeric' : undefined
                                         })}
                                     </div>
