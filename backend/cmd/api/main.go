@@ -254,7 +254,7 @@ func main() {
 		if userID == "" { http.Error(w, "Unauthorized", 401); return }
 		ensureUser(r.Context(), db, userID)
 		
-		query := "SELECT ca.account_name, ca.provider, COALESCE(cr.service_name, 'No activity'), SUM(COALESCE(cr.amount_usd, 0)) FROM cloud_accounts ca LEFT JOIN cost_reports cr ON ca.id = cr.account_id WHERE ca.user_id = $1"
+		query := "SELECT ca.account_name, ca.provider, COALESCE(cr.service_name, 'No activity'), SUM(COALESCE(cr.amount_usd, 0)) FROM cloud_accounts ca LEFT JOIN cost_reports cr ON ca.id = cr.account_id"
 		args := []interface{}{userID}
 		
 		dateFilter := ""
@@ -270,8 +270,16 @@ func main() {
 		default: dateFilter = " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)"
 		}
 		
+		// Date filter goes in the ON clause to preserve LEFT JOIN behavior
 		query += dateFilter
 		
+		tag := r.URL.Query().Get("tag")
+		if tag != "" && tag != "all" {
+			query += fmt.Sprintf(" AND cr.tag_name = $%d", len(args)+1)
+			args = append(args, tag)
+		}
+		
+		// Account/provider filters go in WHERE clause
 		query += " WHERE ca.user_id = $1"
 		
 		accountID := r.URL.Query().Get("account_id")
@@ -283,12 +291,6 @@ func main() {
 		if provider != "" {
 			query += fmt.Sprintf(" AND ca.provider = $%d", len(args)+1)
 			args = append(args, provider)
-		}
-		
-		tag := r.URL.Query().Get("tag")
-		if tag != "" && tag != "all" {
-			query += fmt.Sprintf(" AND cr.tag_name = $%d", len(args)+1)
-			args = append(args, tag)
 		}
 		
 		query += " GROUP BY 1, 2, 3 ORDER BY 4 DESC"
@@ -391,7 +393,7 @@ func main() {
 			http.Error(w, "Query failed", 500); return
 		}
 		defer rows.Close()
-		type Row struct { Provider string `json:"provider"`; TotalSoFar float64 `json:"total_so_far"`; ProjectedTotal float64 `json:"project_total"`; Budget float64 `json:"budget"` }
+		type Row struct { Provider string `json:"provider"`; TotalSoFar float64 `json:"total_so_far"`; ProjectedTotal float64 `json:"projected_total"`; Budget float64 `json:"budget"` }
 		var res []Row
 		for rows.Next() {
 			var r Row; rows.Scan(&r.Provider, &r.TotalSoFar, &r.ProjectedTotal, &r.Budget); res = append(res, r)
