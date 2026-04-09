@@ -53,6 +53,7 @@ function buildChartData(rows: ReportRow[]): { data: ChartPoint[], series: string
     const seriesSet = new Set<string>();
     
     for (const row of rows) {
+        if (!row.period) continue;
         const d = row.period.slice(0, 10);
         if (!map[d]) map[d] = { date: d };
         const label = row.group_name || "Unknown";
@@ -473,7 +474,7 @@ export default function DashboardPage() {
                     title={granularity === "day" ? (timeframe === "today" ? "Burn Status" : "Daily Burn Rate") : "Monthly Burn Rate"}
                     value={timeframe === "today" ? "Stable" : 
                         granularity === "day" 
-                        ? format(totalAll / (parseInt(timeframe) || 1))
+                        ? format(chartData.length > 0 ? totalAll / chartData.length : 0)
                         : format(totalAll / (
                             timeframe === "90d" ? 3 :
                             timeframe === "180d" ? 6 :
@@ -482,7 +483,7 @@ export default function DashboardPage() {
                     }
                     icon={<TrendingUp size={18} className="text-orange-400" />}
                     color="orange"
-                    subtitle={granularity === "day" ? "Avg per day" : "Avg per month"}
+                    subtitle={timeframe === "today" ? "Current day status" : granularity === "day" ? `Avg per day (${chartData.length} days)` : "Avg per month"}
                 />
             </div>
 
