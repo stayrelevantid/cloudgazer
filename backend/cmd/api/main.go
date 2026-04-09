@@ -272,6 +272,8 @@ func main() {
 		
 		query += dateFilter
 		
+		query += " WHERE ca.user_id = $1"
+		
 		accountID := r.URL.Query().Get("account_id")
 		if accountID != "" {
 			query += fmt.Sprintf(" AND ca.id = $%d", len(args)+1)
@@ -282,8 +284,6 @@ func main() {
 			query += fmt.Sprintf(" AND ca.provider = $%d", len(args)+1)
 			args = append(args, provider)
 		}
-		
-		// Optional filters will be appended below using AND since WHERE is already in the base query
 		
 		tag := r.URL.Query().Get("tag")
 		if tag != "" && tag != "all" {
@@ -425,7 +425,7 @@ func main() {
 		default: dateFilter = " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)"
 		}
 
-		query := fmt.Sprintf("SELECT COALESCE(DATE_TRUNC('%s', cr.record_date)::text, CURRENT_DATE::text), %s, SUM(COALESCE(cr.amount_usd, 0)) FROM cloud_accounts ca LEFT JOIN cost_reports cr ON ca.id = cr.account_id WHERE ca.user_id = $1 %s", trunc, fld, dateFilter)
+		query := fmt.Sprintf("SELECT COALESCE(DATE_TRUNC('%s', cr.record_date)::text, CURRENT_DATE::text), %s, SUM(COALESCE(cr.amount_usd, 0)) FROM cloud_accounts ca LEFT JOIN cost_reports cr ON ca.id = cr.account_id %s WHERE ca.user_id = $1", trunc, fld, dateFilter)
 		args := []interface{}{userID}
 		
 		if accountID != "" { query += fmt.Sprintf(" AND ca.id = $%d", len(args)+1); args = append(args, accountID) }
@@ -469,8 +469,17 @@ func main() {
 		default: dateFilter = " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)"
 		}
 
-		query := fmt.Sprintf("SELECT ca.account_name, ca.provider, COALESCE(cr.service_name, 'No activity'), COALESCE(cr.resource_name, '-'), COALESCE(cr.tag_name, 'untagged'), SUM(COALESCE(cr.amount_usd, 0)) FROM cloud_accounts ca LEFT JOIN cost_reports cr ON ca.id = cr.account_id WHERE ca.user_id = $1 %s", dateFilter)
+		query := fmt.Sprintf("SELECT ca.account_name, ca.provider, COALESCE(cr.service_name, 'No activity'), COALESCE(cr.resource_name, '-'), COALESCE(cr.tag_name, 'untagged'), SUM(COALESCE(cr.amount_usd, 0)) FROM cloud_accounts ca LEFT JOIN cost_reports cr ON ca.id = cr.account_id %s", dateFilter)
 		args := []interface{}{userID}
+		
+		tag := r.URL.Query().Get("tag")
+		if tag != "" && tag != "all" {
+			query += fmt.Sprintf(" AND cr.tag_name = $%d", len(args)+1)
+			args = append(args, tag)
+		}
+		
+		query += " WHERE ca.user_id = $1"
+		
 		if accountID != "" {
 			query += fmt.Sprintf(" AND ca.id = $%d", len(args)+1)
 			args = append(args, accountID)
@@ -478,12 +487,6 @@ func main() {
 		if provider != "" {
 			query += fmt.Sprintf(" AND ca.provider = $%d", len(args)+1)
 			args = append(args, provider)
-		}
-		
-		tag := r.URL.Query().Get("tag")
-		if tag != "" && tag != "all" {
-			query += fmt.Sprintf(" AND cr.tag_name = $%d", len(args)+1)
-			args = append(args, tag)
 		}
 		
 		query += " GROUP BY 1,2,3,4,5 ORDER BY 6 DESC"
@@ -615,8 +618,8 @@ func main() {
 
 		query := fmt.Sprintf(`
 			SELECT COALESCE(DATE_TRUNC('%s', cr.record_date)::text, CURRENT_DATE::text), SUM(COALESCE(cr.amount_usd, 0)) 
-			FROM cloud_accounts ca LEFT JOIN cost_reports cr ON ca.id = cr.account_id 
-			WHERE ca.user_id = $1 %s %s
+			FROM cloud_accounts ca LEFT JOIN cost_reports cr ON ca.id = cr.account_id %s
+			WHERE ca.user_id = $1 %s
 			GROUP BY 1 ORDER BY 1 DESC`, trunc, dateCondition, extra)
 		
 		rows, err := db.Pool.Query(r.Context(), query, args...)
