@@ -254,24 +254,27 @@ func main() {
 		if userID == "" { http.Error(w, "Unauthorized", 401); return }
 		ensureUser(r.Context(), db, userID)
 		
-		query := "SELECT ca.account_name, ca.provider, cr.service_name, SUM(cr.amount_usd) FROM cost_reports cr JOIN cloud_accounts ca ON ca.id = cr.account_id WHERE ca.user_id = $1"
+		query := "SELECT ca.account_name, ca.provider, COALESCE(cr.service_name, 'No activity'), SUM(COALESCE(cr.amount_usd, 0)) FROM cloud_accounts ca LEFT JOIN cost_reports cr ON ca.id = cr.account_id"
 		args := []interface{}{userID}
 		
+		dateFilter := ""
 		switch timeframe {
-		case "today": query += " AND cr.record_date = CURRENT_DATE"
-		case "7d": query += " AND cr.record_date >= CURRENT_DATE - INTERVAL '6 days'"
-		case "30d": query += " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)"
-		case "90d": query += " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '2 months'"
-		case "180d": query += " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '5 months'"
-		case "365d": query += " AND cr.record_date >= DATE_TRUNC('year', CURRENT_DATE)"
-		case "last_year": query += " AND cr.record_date >= DATE_TRUNC('year', CURRENT_DATE - INTERVAL '1 year') AND cr.record_date < DATE_TRUNC('year', CURRENT_DATE)"
-		case "2y_ago": query += " AND cr.record_date >= DATE_TRUNC('year', CURRENT_DATE - INTERVAL '2 years') AND cr.record_date < DATE_TRUNC('year', CURRENT_DATE - INTERVAL '1 year')"
-		default: query += " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)"
+		case "today": dateFilter = " AND cr.record_date = CURRENT_DATE"
+		case "7d": dateFilter = " AND cr.record_date >= CURRENT_DATE - INTERVAL '6 days'"
+		case "30d": dateFilter = " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)"
+		case "90d": dateFilter = " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '2 months'"
+		case "180d": dateFilter = " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '5 months'"
+		case "365d": dateFilter = " AND cr.record_date >= DATE_TRUNC('year', CURRENT_DATE)"
+		case "last_year": dateFilter = " AND cr.record_date >= DATE_TRUNC('year', CURRENT_DATE - INTERVAL '1 year') AND cr.record_date < DATE_TRUNC('year', CURRENT_DATE)"
+		case "2y_ago": dateFilter = " AND cr.record_date >= DATE_TRUNC('year', CURRENT_DATE - INTERVAL '2 years') AND cr.record_date < DATE_TRUNC('year', CURRENT_DATE - INTERVAL '1 year')"
+		default: dateFilter = " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)"
 		}
+		
+		query += dateFilter
 		
 		accountID := r.URL.Query().Get("account_id")
 		if accountID != "" {
-			query += fmt.Sprintf(" AND cr.account_id = $%d", len(args)+1)
+			query += fmt.Sprintf(" AND ca.id = $%d", len(args)+1)
 			args = append(args, accountID)
 		}
 		provider := r.URL.Query().Get("provider")
@@ -279,6 +282,9 @@ func main() {
 			query += fmt.Sprintf(" AND ca.provider = $%d", len(args)+1)
 			args = append(args, provider)
 		}
+		
+		query += " WHERE ca.user_id = $1"
+		
 		tag := r.URL.Query().Get("tag")
 		if tag != "" && tag != "all" {
 			query += fmt.Sprintf(" AND cr.tag_name = $%d", len(args)+1)
@@ -311,7 +317,7 @@ func main() {
 		extra := ""
 		accountID := r.URL.Query().Get("account_id")
 		if accountID != "" {
-			extra += fmt.Sprintf(" AND cr.account_id = $%d", len(args)+1)
+			extra += fmt.Sprintf(" AND ca.id = $%d", len(args)+1)
 			args = append(args, accountID)
 		}
 		provider := r.URL.Query().Get("provider")
@@ -342,8 +348,8 @@ func main() {
 		
 		rows, err := db.Pool.Query(r.Context(), fmt.Sprintf(`
 			WITH ranges AS (%s),
-			data AS (SELECT cr.service_name, ca.provider, SUM(CASE WHEN cr.record_date >= r.cur_s AND cr.record_date <= r.cur_e THEN cr.amount_usd ELSE 0 END) as cur, SUM(CASE WHEN cr.record_date >= r.prev_s AND cr.record_date <= r.prev_e THEN cr.amount_usd ELSE 0 END) as prev FROM cost_reports cr JOIN cloud_accounts ca ON ca.id = cr.account_id CROSS JOIN ranges r WHERE ca.user_id = $1 AND cr.record_date >= r.prev_s AND cr.record_date <= COALESCE(r.cur_e, CURRENT_DATE) %s GROUP BY 1, 2)
-			SELECT service_name, provider, cur, prev, (cur - prev), CASE WHEN prev = 0 THEN 100 ELSE ((cur-prev)/prev)*100 END as pct FROM data WHERE cur > 0 OR prev > 0 ORDER BY cur DESC`, rangesCTE, extra), args...)
+			data AS (SELECT COALESCE(cr.service_name, 'No activity') as service_name, ca.provider, SUM(CASE WHEN cr.record_date >= r.cur_s AND cr.record_date <= r.cur_e THEN cr.amount_usd ELSE 0 END) as cur, SUM(CASE WHEN cr.record_date >= r.prev_s AND cr.record_date <= r.prev_e THEN cr.amount_usd ELSE 0 END) as prev FROM cloud_accounts ca LEFT JOIN cost_reports cr ON ca.id = cr.account_id CROSS JOIN ranges r WHERE ca.user_id = $1 %s GROUP BY 1, 2)
+			SELECT service_name, provider, cur, prev, (cur - prev), CASE WHEN prev = 0 THEN 100 ELSE ((cur-prev)/prev)*100 END as pct FROM data ORDER BY cur DESC`, rangesCTE, extra), args...)
 		if err != nil {
 			log.Printf("Comparison query error: %v", err)
 			http.Error(w, "Query failed", 500); return
@@ -403,31 +409,28 @@ func main() {
 		trunc := "day"; if gr == "week" || gr == "month" { trunc = gr }
 		fld := "'Total'"; switch gb { case "account": fld = "ca.account_name"; case "service": fld = "cr.service_name"; case "provider": fld = "ca.provider"; case "tag": fld = "cr.tag_name" }
 		
-		query := fmt.Sprintf("SELECT DATE_TRUNC('%s', cr.record_date)::text, %s, SUM(cr.amount_usd) FROM cost_reports cr JOIN cloud_accounts ca ON ca.id = cr.account_id WHERE ca.user_id = $1", trunc, fld)
-		args := []interface{}{userID}
-		
 		accountID := r.URL.Query().Get("account_id")
-		if accountID != "" {
-			query += fmt.Sprintf(" AND cr.account_id = $%d", len(args)+1)
-			args = append(args, accountID)
-		}
 		provider := r.URL.Query().Get("provider")
-		if provider != "" {
-			query += fmt.Sprintf(" AND ca.provider = $%d", len(args)+1)
-			args = append(args, provider)
+
+		dateFilter := ""
+		switch tr {
+		case "today": dateFilter = " AND cr.record_date = CURRENT_DATE"
+		case "7d": dateFilter = " AND cr.record_date >= CURRENT_DATE - INTERVAL '6 days'"
+		case "30d": dateFilter = " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)"
+		case "90d": dateFilter = " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '2 months'"
+		case "180d": dateFilter = " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '5 months'"
+		case "365d": dateFilter = " AND cr.record_date >= DATE_TRUNC('year', CURRENT_DATE)"
+		case "last_year": dateFilter = " AND cr.record_date >= DATE_TRUNC('year', CURRENT_DATE - INTERVAL '1 year') AND cr.record_date < DATE_TRUNC('year', CURRENT_DATE)"
+		case "2y_ago": dateFilter = " AND cr.record_date >= DATE_TRUNC('year', CURRENT_DATE - INTERVAL '2 years') AND cr.record_date < DATE_TRUNC('year', CURRENT_DATE - INTERVAL '1 year')"
+		default: dateFilter = " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)"
 		}
 
-		switch tr {
-		case "today": query += " AND cr.record_date = CURRENT_DATE"
-		case "7d": query += " AND cr.record_date >= CURRENT_DATE - INTERVAL '6 days'"
-		case "30d": query += " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)"
-		case "90d": query += " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '2 months'"
-		case "180d": query += " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '5 months'"
-		case "365d": query += " AND cr.record_date >= DATE_TRUNC('year', CURRENT_DATE)"
-		case "last_year": query += " AND cr.record_date >= DATE_TRUNC('year', CURRENT_DATE - INTERVAL '1 year') AND cr.record_date < DATE_TRUNC('year', CURRENT_DATE)"
-		case "2y_ago": query += " AND cr.record_date >= DATE_TRUNC('year', CURRENT_DATE - INTERVAL '2 years') AND cr.record_date < DATE_TRUNC('year', CURRENT_DATE - INTERVAL '1 year')"
-		default: query += " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)"
-		}
+		query := fmt.Sprintf("SELECT COALESCE(DATE_TRUNC('%s', cr.record_date)::text, CURRENT_DATE::text), %s, SUM(COALESCE(cr.amount_usd, 0)) FROM cloud_accounts ca LEFT JOIN cost_reports cr ON ca.id = cr.account_id %s WHERE ca.user_id = $1", trunc, fld, dateFilter)
+		args := []interface{}{userID}
+		
+		if accountID != "" { query += fmt.Sprintf(" AND ca.id = $%d", len(args)+1); args = append(args, accountID) }
+		if provider != "" { query += fmt.Sprintf(" AND ca.provider = $%d", len(args)+1); args = append(args, provider) }
+
 		query += " GROUP BY 1, 2 ORDER BY 1 ASC"
 		
 		rows, err := db.Pool.Query(r.Context(), query, args...)
@@ -450,36 +453,39 @@ func main() {
 		if userID == "" { http.Error(w, "Unauthorized", 401); return }
 		ensureUser(r.Context(), db, userID)
 		
-		query := "SELECT ca.account_name, ca.provider, cr.service_name, cr.resource_name, cr.tag_name, SUM(cr.amount_usd) FROM cost_reports cr JOIN cloud_accounts ca ON ca.id = cr.account_id WHERE ca.user_id = $1"
-		args := []interface{}{userID}
-		
 		accountID := r.URL.Query().Get("account_id")
+		provider := r.URL.Query().Get("provider")
+
+		dateFilter := ""
+		switch tr {
+		case "today": dateFilter = " AND cr.record_date = CURRENT_DATE"
+		case "7d": dateFilter = " AND cr.record_date >= CURRENT_DATE - INTERVAL '6 days'"
+		case "30d": dateFilter = " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)"
+		case "90d": dateFilter = " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '2 months'"
+		case "180d": dateFilter = " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '5 months'"
+		case "365d": dateFilter = " AND cr.record_date >= DATE_TRUNC('year', CURRENT_DATE)"
+		case "last_year": dateFilter = " AND cr.record_date >= DATE_TRUNC('year', CURRENT_DATE - INTERVAL '1 year') AND cr.record_date < DATE_TRUNC('year', CURRENT_DATE)"
+		case "2y_ago": dateFilter = " AND cr.record_date >= DATE_TRUNC('year', CURRENT_DATE - INTERVAL '2 years') AND cr.record_date < DATE_TRUNC('year', CURRENT_DATE - INTERVAL '1 year')"
+		default: dateFilter = " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)"
+		}
+
+		query := fmt.Sprintf("SELECT ca.account_name, ca.provider, COALESCE(cr.service_name, 'No activity'), COALESCE(cr.resource_name, '-'), COALESCE(cr.tag_name, 'untagged'), SUM(COALESCE(cr.amount_usd, 0)) FROM cloud_accounts ca LEFT JOIN cost_reports cr ON ca.id = cr.account_id %s WHERE ca.user_id = $1", dateFilter)
+		args := []interface{}{userID}
 		if accountID != "" {
-			query += fmt.Sprintf(" AND cr.account_id = $%d", len(args)+1)
+			query += fmt.Sprintf(" AND ca.id = $%d", len(args)+1)
 			args = append(args, accountID)
 		}
-		provider := r.URL.Query().Get("provider")
 		if provider != "" {
 			query += fmt.Sprintf(" AND ca.provider = $%d", len(args)+1)
 			args = append(args, provider)
 		}
+		
 		tag := r.URL.Query().Get("tag")
 		if tag != "" && tag != "all" {
 			query += fmt.Sprintf(" AND cr.tag_name = $%d", len(args)+1)
 			args = append(args, tag)
 		}
-
-		switch tr {
-		case "today": query += " AND cr.record_date = CURRENT_DATE"
-		case "7d": query += " AND cr.record_date >= CURRENT_DATE - INTERVAL '6 days'"
-		case "30d": query += " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)"
-		case "90d": query += " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '2 months'"
-		case "180d": query += " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '5 months'"
-		case "365d": query += " AND cr.record_date >= DATE_TRUNC('year', CURRENT_DATE)"
-		case "last_year": query += " AND cr.record_date >= DATE_TRUNC('year', CURRENT_DATE - INTERVAL '1 year') AND cr.record_date < DATE_TRUNC('year', CURRENT_DATE)"
-		case "2y_ago": query += " AND cr.record_date >= DATE_TRUNC('year', CURRENT_DATE - INTERVAL '2 years') AND cr.record_date < DATE_TRUNC('year', CURRENT_DATE - INTERVAL '1 year')"
-		default: query += " AND cr.record_date >= DATE_TRUNC('month', CURRENT_DATE)"
-		}
+		
 		query += " GROUP BY 1,2,3,4,5 ORDER BY 6 DESC"
 		
 		rows, err := db.Pool.Query(r.Context(), query, args...)
@@ -580,18 +586,8 @@ func main() {
 		if userID == "" { http.Error(w, "Unauthorized", 401); return }
 		ensureUser(r.Context(), db, userID)
 		
-		args := []interface{}{userID}
-		extra := ""
 		accountID := r.URL.Query().Get("account_id")
-		if accountID != "" {
-			extra += fmt.Sprintf(" AND cr.account_id = $%d", len(args)+1)
-			args = append(args, accountID)
-		}
 		provider := r.URL.Query().Get("provider")
-		if provider != "" {
-			extra += fmt.Sprintf(" AND ca.provider = $%d", len(args)+1)
-			args = append(args, provider)
-		}
 
 		trunc := "month"
 		dateCondition := "AND cr.record_date >= DATE_TRUNC('year', CURRENT_DATE)"
@@ -606,11 +602,24 @@ func main() {
 		case "2y_ago": dateCondition = "AND cr.record_date >= DATE_TRUNC('year', CURRENT_DATE - INTERVAL '2 years') AND cr.record_date < DATE_TRUNC('year', CURRENT_DATE - INTERVAL '1 year')"; trunc = "month"
 		}
 
-		rows, err := db.Pool.Query(r.Context(), fmt.Sprintf(`
-			SELECT DATE_TRUNC('%s', cr.record_date)::text, SUM(cr.amount_usd) 
-			FROM cost_reports cr JOIN cloud_accounts ca ON ca.id = cr.account_id 
-			WHERE ca.user_id = $1 %s %s
-			GROUP BY 1 ORDER BY 1 DESC`, trunc, dateCondition, extra), args...)
+		args := []interface{}{userID}
+		extra := ""
+		if accountID != "" {
+			extra += fmt.Sprintf(" AND ca.id = $%d", len(args)+1)
+			args = append(args, accountID)
+		}
+		if provider != "" {
+			extra += fmt.Sprintf(" AND ca.provider = $%d", len(args)+1)
+			args = append(args, provider)
+		}
+
+		query := fmt.Sprintf(`
+			SELECT COALESCE(DATE_TRUNC('%s', cr.record_date)::text, CURRENT_DATE::text), SUM(COALESCE(cr.amount_usd, 0)) 
+			FROM cloud_accounts ca LEFT JOIN cost_reports cr ON ca.id = cr.account_id %s 
+			WHERE ca.user_id = $1 %s
+			GROUP BY 1 ORDER BY 1 DESC`, trunc, dateCondition, extra)
+		
+		rows, err := db.Pool.Query(r.Context(), query, args...)
 		if err != nil { 
 			log.Printf("Historical query error: %v", err)
 			http.Error(w, "Query failed", 500); return 
