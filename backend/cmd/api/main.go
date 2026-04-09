@@ -136,30 +136,58 @@ func main() {
 	// ── Auth-wrapped Handlers ──────────────────────────────────────────
 	
 	// Cron Trigger
-	mux.Handle("/api/cron/fetch", clerkhttp.RequireHeaderAuthorization()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// Supports two modes:
+	// 1. Clerk Auth: Manual Refresh for current user (30d historical)
+	// 2. CRON_SECRET: Automated Daily Fetch for ALL users
+	mux.HandleFunc("/api/cron/fetch", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		userID := getUserID(r)
-		if userID == "" {
-			log.Println("Auth failed: No userID in context")
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+
+		cronSecret := os.Getenv("CRON_SECRET")
+		authHeader := r.Header.Get("Authorization")
+		isSystemCron := cronSecret != "" && authHeader == "Bearer "+cronSecret
+
+		if isSystemCron {
+			log.Println("[Cron] System-wide fetch triggered via CRON_SECRET")
+			// Universal fetch for all users/accounts
+			go func() {
+				// Use background context for system cron
+				if err := cron.RunDailyFetch(context.Background(), db, ssmClient, awsRegion, ""); err != nil {
+					log.Printf("[Cron] System fetch error: %v", err)
+				}
+			}()
+			w.WriteHeader(http.StatusAccepted)
+			w.Write([]byte(`{"status":"success","mode":"system"}`))
 			return
-		}
-		if err := ensureUser(r.Context(), db, userID); err != nil {
-			log.Printf("Failed to ensure user %s: %v", userID, err)
 		}
 
-		// For manual sync, we do 30 days historical to ensure dashboard is populated
-		if err := cron.RunHistoricalSync(r.Context(), db, ssmClient, awsRegion, "", 1, userID); err != nil {
-			log.Printf("Cron fetch error: %v", err)
-			http.Error(w, "Fetch failed", http.StatusInternalServerError)
-			return
-		}
-		w.WriteHeader(http.StatusAccepted)
-		w.Write([]byte(`{"status":"success"}`))
-	})))
+		// Fallback to Clerk Auth (Manual Refresh)
+		// We use clerkhttp.WithHeaderAuthorization to manually check the token for this route
+		clerkHandler := clerkhttp.RequireHeaderAuthorization()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			userID := getUserID(r)
+			if userID == "" {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+			if err := ensureUser(r.Context(), db, userID); err != nil {
+				log.Printf("Failed to ensure user %s: %v", userID, err)
+			}
+
+			log.Printf("[Cron] Manual refresh for user: %s", userID)
+			// For manual sync, we do 30 days historical
+			if err := cron.RunHistoricalSync(r.Context(), db, ssmClient, awsRegion, "", 1, userID); err != nil {
+				log.Printf("Manual fetch error: %v", err)
+				http.Error(w, "Fetch failed", http.StatusInternalServerError)
+				return
+			}
+			w.WriteHeader(http.StatusAccepted)
+			w.Write([]byte(`{"status":"success","mode":"manual"}`))
+		}))
+
+		clerkHandler.ServeHTTP(w, r)
+	})
 
 	// Accounts
 	mux.Handle("/api/accounts", clerkhttp.RequireHeaderAuthorization()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
