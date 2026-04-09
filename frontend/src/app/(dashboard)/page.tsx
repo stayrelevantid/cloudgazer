@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "@clerk/nextjs";
+import { useAuthFetch } from "@/lib/useAuthFetch";
 import { API_BASE } from "@/lib/config";
 import {
     Area,
@@ -66,6 +67,7 @@ function buildChartData(rows: ReportRow[]): { data: ChartPoint[], series: string
 
 export default function DashboardPage() {
     const { getToken } = useAuth();
+    const { authFetch } = useAuthFetch();
     const { format, convert, symbol, exchangeRate } = useCurrency();
     const [rows, setRows] = useState<ReportRow[]>([]);
     const [comparison, setComparison] = useState<ComparisonData[]>([]);
@@ -103,16 +105,14 @@ export default function DashboardPage() {
     const fetchGlobalData = useCallback(async () => {
         setLoading(true);
         setFetchError(false);
-        const token = await getToken();
-        const headers = { "Authorization": `Bearer ${token}` };
         const params = `range=${timeframe}&granularity=${granularity}&group_by=${groupBy}&account_id=${selectedAccount === "all" ? "" : selectedAccount}&provider=${selectedProvider === "all" ? "" : selectedProvider}`;
         
         Promise.all([
-            fetch(`${API_BASE}/api/reports/advanced?${params}`, { headers }).then(r => r.json()),
-            fetch(`${API_BASE}/api/reports/services?${params}`, { headers }).then(r => r.json()),
-            fetch(`${API_BASE}/api/reports/historical?${params}`, { headers }).then(r => r.json()),
-            fetch(`${API_BASE}/api/reports/comparison?${params}`, { headers }).then(r => r.json()),
-            fetch(`${API_BASE}/api/reports/forecasting?${params}`, { headers }).then(r => r.json())
+            authFetch(`${API_BASE}/api/reports/advanced?${params}`).then(r => r.json()),
+            authFetch(`${API_BASE}/api/reports/services?${params}`).then(r => r.json()),
+            authFetch(`${API_BASE}/api/reports/historical?${params}`).then(r => r.json()),
+            authFetch(`${API_BASE}/api/reports/comparison?${params}`).then(r => r.json()),
+            authFetch(`${API_BASE}/api/reports/forecasting?${params}`).then(r => r.json())
         ])
             .then(([rData, sData, hData, cData, fData]) => {
                 setRows(rData.reports ?? []);
@@ -121,7 +121,8 @@ export default function DashboardPage() {
                 setComparison(cData.comparison ?? []);
                 setForecasts(fData.forecasting ?? []);
             })
-            .catch(() => {
+            .catch((err) => {
+                if (err.message === "Session expired") return; // redirect already triggered
                 setFetchError(true);
                 setRows([]);
                 setServices([]);
@@ -130,24 +131,23 @@ export default function DashboardPage() {
                 setForecasts([]);
             })
             .finally(() => setLoading(false));
-    }, [timeframe, granularity, groupBy, selectedAccount, selectedProvider, getToken]);
+    }, [timeframe, granularity, groupBy, selectedAccount, selectedProvider, authFetch]);
 
     const fetchResourcesData = useCallback(async () => {
         setResourcesLoading(true);
-        const token = await getToken();
-        const headers = { "Authorization": `Bearer ${token}` };
         const params = `range=${timeframe}&account_id=${selectedAccount === "all" ? "" : selectedAccount}&provider=${selectedProvider === "all" ? "" : selectedProvider}&group_by=${groupBy}&tag=${selectedTag}`;
         
-        fetch(`${API_BASE}/api/reports/resources?${params}`, { headers })
+        authFetch(`${API_BASE}/api/reports/resources?${params}`)
             .then(r => r.json())
             .then(resData => {
                 setResources(resData.resources ?? []);
             })
-            .catch(() => {
+            .catch((err) => {
+                if (err.message === "Session expired") return;
                 setResources([]);
             })
             .finally(() => setResourcesLoading(false));
-    }, [timeframe, selectedAccount, selectedProvider, groupBy, selectedTag, getToken]);
+    }, [timeframe, selectedAccount, selectedProvider, groupBy, selectedTag, authFetch]);
 
     useEffect(() => {
         fetchGlobalData();
@@ -159,26 +159,32 @@ export default function DashboardPage() {
 
     useEffect(() => {
         const loadMeta = async () => {
-            const token = await getToken();
-            const headers = { "Authorization": `Bearer ${token}` };
-
-            fetch(`${API_BASE}/api/accounts`, { headers })
-                .then(r => r.json())
-                .then(data => setAccounts(data.accounts ?? []))
-                .catch(() => setAccounts([]));
-
-            fetch(`${API_BASE}/api/tags`, { headers })
-                .then(r => r.json())
-                .then(data => setTags(data.tags ?? []))
-                .catch(() => setTags([]));
+            try {
+                const [accRes, tagRes] = await Promise.all([
+                    authFetch(`${API_BASE}/api/accounts`),
+                    authFetch(`${API_BASE}/api/tags`)
+                ]);
+                const accData = await accRes.json();
+                const tagData = await tagRes.json();
+                setAccounts(accData.accounts ?? []);
+                setTags(tagData.tags ?? []);
+            } catch (err) {
+                if (err instanceof Error && err.message === "Session expired") return;
+                setAccounts([]);
+                setTags([]);
+            }
         };
         loadMeta();
-    }, [getToken]);
+    }, [authFetch]);
 
     const handleRefresh = async () => {
         setLoading(true);
         try {
             const token = await getToken();
+            if (!token) {
+                window.location.href = "/sign-in";
+                return;
+            }
             const res = await fetch(`${API_BASE}/api/cron/fetch`, { 
                 method: "POST",
                 headers: { "Authorization": `Bearer ${token}` }

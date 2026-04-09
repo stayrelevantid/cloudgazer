@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { useAuth } from "@clerk/nextjs";
+import { useAuthFetch } from "@/lib/useAuthFetch";
 import { API_BASE } from "@/lib/config";
 import { 
     BarChart3, 
@@ -40,7 +40,7 @@ interface ComparisonData {
 }
 
 export default function ComparisonPage() {
-    const { getToken } = useAuth();
+    const { authFetch } = useAuthFetch();
     const { format, convert, symbol, exchangeRate } = useCurrency();
     const [data, setData] = useState<ComparisonData[]>([]);
     const [accounts, setAccounts] = useState<{ id: string; account_name: string; provider: string }[]>([]);
@@ -49,31 +49,32 @@ export default function ComparisonPage() {
 
     const fetchData = useCallback(async () => {
         try {
-            const token = await getToken();
-            const headers = { "Authorization": `Bearer ${token}` };
             const params = new URLSearchParams();
             if (selectedAccount !== "all") params.append("account_id", selectedAccount);
             if (selectedProvider !== "all") params.append("provider", selectedProvider);
 
-            const res = await fetch(`${API_BASE}/api/reports/comparison?${params.toString()}`, { headers });
+            const res = await authFetch(`${API_BASE}/api/reports/comparison?${params.toString()}`);
             const json = await res.json();
             setData(json.comparison ?? []);
         } catch (error) {
+            if (error instanceof Error && error.message === "Session expired") return;
             console.error("Failed to fetch comparison:", error);
         }
-    }, [selectedAccount, selectedProvider, getToken]);
+    }, [selectedAccount, selectedProvider, authFetch]);
 
     useEffect(() => {
         const loadAccounts = async () => {
-            const token = await getToken();
-            const headers = { "Authorization": `Bearer ${token}` };
-            fetch(`${API_BASE}/api/accounts`, { headers })
-                .then(r => r.json())
-                .then(d => setAccounts(d.accounts ?? []))
-                .catch(() => setAccounts([]));
+            try {
+                const res = await authFetch(`${API_BASE}/api/accounts`);
+                const d = await res.json();
+                setAccounts(d.accounts ?? []);
+            } catch (err) {
+                if (err instanceof Error && err.message === "Session expired") return;
+                setAccounts([]);
+            }
         };
         loadAccounts();
-    }, [getToken]);
+    }, [authFetch]);
 
     useEffect(() => {
         fetchData();

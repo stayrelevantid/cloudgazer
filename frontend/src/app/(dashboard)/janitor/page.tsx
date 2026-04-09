@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useAuth } from "@clerk/nextjs";
+import { useAuthFetch } from "@/lib/useAuthFetch";
 import { API_BASE } from "@/lib/config";
 import { Trash2, ShieldAlert, Cpu, Globe, RefreshCcw, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
@@ -41,7 +41,7 @@ type JanitorResult = {
 };
 
 export default function JanitorPage() {
-    const { getToken } = useAuth();
+    const { authFetch } = useAuthFetch();
     const [results, setResults] = useState<JanitorResult[]>([]);
     const [loading, setLoading] = useState(true);
     const [accounts, setAccounts] = useState<{ id: string; account_name: string; provider: string }[]>([]);
@@ -51,20 +51,18 @@ export default function JanitorPage() {
     const fetchData = useCallback(async () => {
         setLoading(true);
         try {
-            const token = await getToken();
             const params = `account_id=${selectedAccount === "all" ? "" : selectedAccount}&provider=${selectedProvider === "all" ? "" : selectedProvider}`;
-            const res = await fetch(`${API_BASE}/api/janitor?${params}`, {
-                headers: { "Authorization": `Bearer ${token}` }
-            });
+            const res = await authFetch(`${API_BASE}/api/janitor?${params}`);
             const data = await res.json();
             setResults(data.janitor ?? []);
         } catch (err) {
+            if (err instanceof Error && err.message === "Session expired") return;
             console.error(err);
             toast.error("Failed to fetch janitor suggestions");
         } finally {
             setLoading(false);
         }
-    }, [getToken, selectedAccount, selectedProvider]);
+    }, [authFetch, selectedAccount, selectedProvider]);
 
     useEffect(() => {
         fetchData();
@@ -72,15 +70,17 @@ export default function JanitorPage() {
 
     useEffect(() => {
         const loadAccounts = async () => {
-            const token = await getToken();
-            const headers = { "Authorization": `Bearer ${token}` };
-            fetch(`${API_BASE}/api/accounts`, { headers })
-                .then(r => r.json())
-                .then(data => setAccounts(data.accounts ?? []))
-                .catch(() => setAccounts([]));
+            try {
+                const res = await authFetch(`${API_BASE}/api/accounts`);
+                const data = await res.json();
+                setAccounts(data.accounts ?? []);
+            } catch (err) {
+                if (err instanceof Error && err.message === "Session expired") return;
+                setAccounts([]);
+            }
         };
         loadAccounts();
-    }, [getToken]);
+    }, [authFetch]);
 
     const totalResources = results.reduce((acc, curr) => acc + curr.resources.length, 0);
 

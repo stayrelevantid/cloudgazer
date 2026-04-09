@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "@clerk/nextjs";
+import { useAuthFetch } from "@/lib/useAuthFetch";
 import { API_BASE } from "@/lib/config";
 import { Plus, BellRing, Trash2, Send, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
@@ -54,6 +55,7 @@ type AlertConfig = {
 
 export default function AlertsPage() {
     const { getToken } = useAuth();
+    const { authFetch } = useAuthFetch();
     const [alerts, setAlerts] = useState<AlertConfig[]>([]);
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [loading, setLoading] = useState(true);
@@ -79,22 +81,21 @@ export default function AlertsPage() {
     const fetchData = useCallback(async () => {
         setLoading(true);
         try {
-            const token = await getToken();
-            const headers = { "Authorization": `Bearer ${token}` };
             const [alRes, acRes] = await Promise.all([
-                fetch(`${API_BASE}/api/alerts`, { headers }),
-                fetch(`${API_BASE}/api/accounts`, { headers }),
+                authFetch(`${API_BASE}/api/alerts`),
+                authFetch(`${API_BASE}/api/accounts`),
             ]);
             const alData = await alRes.json();
             const acData = await acRes.json();
             setAlerts(alData.alerts ?? []);
             setAccounts(acData.accounts ?? []);
         } catch (err) {
+            if (err instanceof Error && err.message === "Session expired") return;
             console.error(err);
         } finally {
             setLoading(false);
         }
-    }, [getToken]);
+    }, [authFetch]);
 
     useEffect(() => {
         fetchData();
@@ -108,6 +109,7 @@ export default function AlertsPage() {
 
         try {
             const token = await getToken();
+            if (!token) { window.location.href = "/sign-in"; return; }
             const res = await fetch(`${API_BASE}/api/alerts`, {
                 method: "POST",
                 headers: { 
@@ -166,6 +168,7 @@ export default function AlertsPage() {
         if (type === "delete" && id) {
             try {
                 const token = await getToken();
+                if (!token) { window.location.href = "/sign-in"; return; }
                 const res = await fetch(`${API_BASE}/api/alerts?account_id=${id}`, { 
                     method: "DELETE",
                     headers: { "Authorization": `Bearer ${token}` }
@@ -183,6 +186,7 @@ export default function AlertsPage() {
             setTestLoading(id || "manual");
             try {
                 const token = await getToken();
+                if (!token) { window.location.href = "/sign-in"; return; }
                 const res = await fetch(`${API_BASE}/api/alerts/test`, {
                     method: "POST",
                     headers: { 

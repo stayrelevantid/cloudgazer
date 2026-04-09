@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "@clerk/nextjs";
+import { useAuthFetch } from "@/lib/useAuthFetch";
 import { API_BASE } from "@/lib/config";
 import { useCurrency } from "@/contexts/CurrencyContext";
 import { Plus, Wallet, Trash2, AlertCircle, Percent, Pencil } from "lucide-react";
@@ -59,6 +60,7 @@ type Account = {
 
 export default function BudgetsPage() {
     const { getToken } = useAuth();
+    const { authFetch } = useAuthFetch();
     const { symbol } = useCurrency();
     const [budgets, setBudgets] = useState<Budget[]>([]);
     const [accounts, setAccounts] = useState<Account[]>([]);
@@ -77,22 +79,21 @@ export default function BudgetsPage() {
     const fetchData = useCallback(async () => {
         setLoading(true);
         try {
-            const token = await getToken();
-            const headers = { "Authorization": `Bearer ${token}` };
             const [bRes, aRes] = await Promise.all([
-                fetch(`${API_BASE}/api/budgets`, { headers }),
-                fetch(`${API_BASE}/api/accounts`, { headers })
+                authFetch(`${API_BASE}/api/budgets`),
+                authFetch(`${API_BASE}/api/accounts`)
             ]);
             const bData = await bRes.json();
             const aData = await aRes.json();
             setBudgets(bData.budgets ?? []);
             setAccounts(aData.accounts ?? []);
-        } catch {
+        } catch (err) {
+            if (err instanceof Error && err.message === "Session expired") return;
             toast.error("Failed to load data");
         } finally {
             setLoading(false);
         }
-    }, [getToken]);
+    }, [authFetch]);
 
     useEffect(() => {
         fetchData();
@@ -105,6 +106,7 @@ export default function BudgetsPage() {
         }
         try {
             const token = await getToken();
+            if (!token) { window.location.href = "/sign-in"; return; }
             const res = await fetch(`${API_BASE}/api/budgets`, {
                 method: "POST",
                 headers: { 
@@ -142,6 +144,7 @@ export default function BudgetsPage() {
     const handleDeleteBudget = async (id: string) => {
         try {
             const token = await getToken();
+            if (!token) { window.location.href = "/sign-in"; return; }
             const res = await fetch(`${API_BASE}/api/budgets?id=${id}`, { 
                 method: "DELETE",
                 headers: { "Authorization": `Bearer ${token}` }

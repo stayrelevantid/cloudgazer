@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "@clerk/nextjs";
+import { useAuthFetch } from "@/lib/useAuthFetch";
 import { API_BASE } from "@/lib/config";
 import { Plus, Cloud, Trash2, AlertTriangle, History, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -46,6 +47,7 @@ type Account = {
 
 export default function AccountsPage() {
     const { getToken } = useAuth();
+    const { authFetch } = useAuthFetch();
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [loading, setLoading] = useState(true);
     const [isOpen, setIsOpen] = useState(false);
@@ -67,18 +69,16 @@ export default function AccountsPage() {
     const fetchData = useCallback(async () => {
         setLoading(true);
         try {
-            const token = await getToken();
-            const res = await fetch(`${API_BASE}/api/accounts`, {
-                headers: { "Authorization": `Bearer ${token}` }
-            });
+            const res = await authFetch(`${API_BASE}/api/accounts`);
             const d = await res.json();
             setAccounts(d.accounts ?? []);
-        } catch {
+        } catch (err) {
+            if (err instanceof Error && err.message === "Session expired") return;
             setAccounts([]);
         } finally {
             setLoading(false);
         }
-    }, [getToken]);
+    }, [authFetch]);
 
     useEffect(() => {
         fetchData();
@@ -91,6 +91,7 @@ export default function AccountsPage() {
         }
         try {
             const token = await getToken();
+            if (!token) { window.location.href = "/sign-in"; return; }
             const res = await fetch(`${API_BASE}/api/accounts`, {
                 method: "POST",
                 headers: { 
@@ -134,6 +135,7 @@ export default function AccountsPage() {
 
         try {
             const token = await getToken();
+            if (!token) { window.location.href = "/sign-in"; return; }
             const res = await fetch(`${API_BASE}/api/accounts?id=${id}`, { 
                 method: "DELETE",
                 headers: { "Authorization": `Bearer ${token}` }
@@ -158,6 +160,7 @@ export default function AccountsPage() {
 
         try {
             const token = await getToken();
+            if (!token) { window.location.href = "/sign-in"; return; }
             const res = await fetch(`${API_BASE}/api/accounts/migrate`, {
                 method: "POST",
                 headers: { 
