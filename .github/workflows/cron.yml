@@ -8,6 +8,7 @@ on:
 jobs:
   fetch-costs:
     runs-on: ubuntu-latest
+    environment: Production
     steps:
       - name: Trigger CloudGazer Fetch
         run: |
