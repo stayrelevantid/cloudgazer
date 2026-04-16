@@ -65,7 +65,7 @@ function buildChartData(rows: ReportRow[]): { data: ChartPoint[], series: string
     return { data, series: Array.from(seriesSet) };
 }
 
-export default function DashboardPage() {
+export function DashboardContent() {
     const { getToken } = useAuth();
     const { authFetch } = useAuthFetch();
     const { format, convert, symbol, exchangeRate } = useCurrency();
