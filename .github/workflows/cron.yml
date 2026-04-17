@@ -10,6 +10,28 @@ jobs:
     runs-on: ubuntu-latest
     environment: Production
     steps:
+      - name: Wait for Koyeb to wake up
+        run: |
+          echo "Triggering backend to wake up..."
+          curl -s -o /dev/null --max-time 10 ${{ secrets.API_URL }}/health || true
+          
+          echo "Waiting 30 seconds for app to run..."
+          sleep 30
+          
+          echo "Checking health endpoint..."
+          for i in {1..30}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" ${{ secrets.API_URL }}/health || echo "000")
+            if [ "$STATUS" == "200" ]; then
+              echo "Backend is up and running!"
+              exit 0
+            fi
+            echo "Backend not ready yet (Status: $STATUS), retrying in 10s..."
+            sleep 10
+          done
+          
+          echo "Timeout waiting for backend to wake up"
+          exit 1
+
       - name: Trigger CloudGazer Fetch
         run: |
           curl -X POST "${{ secrets.API_URL }}/api/cron/fetch" \
