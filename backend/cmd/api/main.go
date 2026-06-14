@@ -7,9 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
-)
 
-import (
 	"github.com/clerk/clerk-sdk-go/v2"
 	clerkhttp "github.com/clerk/clerk-sdk-go/v2/http"
 	"github.com/joho/godotenv"
